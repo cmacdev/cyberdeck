@@ -1,0 +1,17 @@
+{
+  "name": "cyberdeck-mcp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A thin, typed MCP boundary around Pi and OpenRouter.",
+  "bin": {
+    "cyberdeck-mcp": "./bin/cyberdeck-mcp.mjs"
+  },
+  "scripts": {
+    "inspect": "node ./bin/cyberdeck-mcp.mjs --inspect",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

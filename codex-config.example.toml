@@ -1,0 +1,24 @@
+# Copy this block into ~/.codex/config.toml and replace both absolute paths.
+[mcp_servers.cyberdeck]
+command = "node"
+args = [
+  "/absolute/path/to/cyberdeck/bin/cyberdeck-mcp.mjs",
+  "--config",
+  "/absolute/path/to/cyberdeck/cyberdeck.config.json",
+]
+
+# cyberdeck.config.json uses "@cwd" as its default workspace root.
+cwd = "/absolute/path/to/your/workspace-parent"
+enabled = true
+required = false
+enabled_tools = ["research", "implement"]
+env_vars = ["OPENROUTER_API_KEY"]
+startup_timeout_sec = 10
+tool_timeout_sec = 1900
+default_tools_approval_mode = "writes"
+
+[mcp_servers.cyberdeck.tools.research]
+approval_mode = "auto"
+
+[mcp_servers.cyberdeck.tools.implement]
+approval_mode = "prompt"

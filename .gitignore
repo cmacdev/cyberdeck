@@ -1,0 +1,3 @@
+.cyberdeck/
+node_modules/
+cyberdeck.config.local.json

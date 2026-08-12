@@ -1,0 +1,58 @@
+{
+  "$schema": "./cyberdeck.config.schema.json",
+  "provider": "openrouter",
+  "workspaceRoots": [
+    "@cwd"
+  ],
+  "artifactDirectory": "./.cyberdeck/runs",
+  "pi": {
+    "command": "pi",
+    "arguments": [],
+    "stateDirectory": null,
+    "trustProjectFiles": false,
+    "loadContextFiles": true
+  },
+  "limits": {
+    "maxConcurrentRuns": 4,
+    "defaultTimeoutSeconds": 600,
+    "maxTimeoutSeconds": 1800,
+    "defaultReturnCharacters": 3000,
+    "maxReturnCharacters": 8000,
+    "maxArtifactBytes": 10485760,
+    "maxTaskCharacters": 50000,
+    "maxContextFiles": 20
+  },
+  "profiles": {
+    "research": {
+      "modelPatterns": [
+        "*"
+      ],
+      "defaultThinking": "high",
+      "maxThinking": "max",
+      "tools": [
+        "read",
+        "grep",
+        "find",
+        "ls"
+      ],
+      "promptPreamble": "Investigate and report evidence. Do not modify files or external state. Clearly separate facts, inferences, and unknowns."
+    },
+    "implementation": {
+      "modelPatterns": [
+        "*"
+      ],
+      "defaultThinking": "high",
+      "maxThinking": "max",
+      "tools": [
+        "read",
+        "grep",
+        "find",
+        "ls",
+        "bash",
+        "edit",
+        "write"
+      ],
+      "promptPreamble": "Implement only the requested change inside the supplied workspace. Preserve unrelated work, verify proportionately, and report changed files and checks."
+    }
+  }
+}
