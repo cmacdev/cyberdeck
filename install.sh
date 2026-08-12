@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 # Cyberdeck installer. Idempotent, no sudo, never touches an existing Pi.
 # Usage: bash install.sh [--dry-run] [--upgrade-pi]
-# Remote mode (piped via curl): requires CYBERDECK_REPO_URL until the repo is hosted.
+# Remote mode (piped): clones CYBERDECK_REPO_URL (default: the private cmacdev/cyberdeck
+# repo, so the machine needs authenticated git/gh for github.com).
 set -euo pipefail
 
 PINNED_PI="0.84.1"
 PI_PACKAGE="@earendil-works/pi-coding-agent"
 CYBERDECK_HOME="${CYBERDECK_HOME:-$HOME/.cyberdeck}"
+CYBERDECK_REPO_URL="${CYBERDECK_REPO_URL:-https://github.com/cmacdev/cyberdeck.git}"
 
 DRY_RUN=0
 UPGRADE_PI=0
@@ -45,7 +47,6 @@ if [ -n "$SCRIPT_DIR" ] && [ -f "$SCRIPT_DIR/bin/cyberdeck-mcp.mjs" ]; then
   APP_DIR="$SCRIPT_DIR"
   note "using checkout at $APP_DIR"
 else
-  [ -n "${CYBERDECK_REPO_URL:-}" ] || die "not running from a checkout and CYBERDECK_REPO_URL is unset."
   APP_DIR="$CYBERDECK_HOME/app"
   if [ -d "$APP_DIR/.git" ]; then
     run git -C "$APP_DIR" pull --ff-only --quiet
