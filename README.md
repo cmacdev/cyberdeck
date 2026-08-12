@@ -38,6 +38,17 @@ The tradeoff is intentional: separate research and implementation tools cost one
 - Pi available on `PATH` (tested against Pi 0.84.1), or a custom `pi.command`/`pi.arguments` configuration.
 - OpenRouter credentials available through `OPENROUTER_API_KEY` or Pi's existing authentication store.
 
+## Install
+
+From a checkout — or, once the repo is hosted, `curl -fsSL <raw-url>/install.sh | bash` (remote mode needs `CYBERDECK_REPO_URL` set until then):
+
+```sh
+bash install.sh --dry-run
+bash install.sh
+```
+
+The installer is idempotent, never uses sudo, and never touches an existing Pi (it warns when the found version differs from the tested one; `--upgrade-pi` opts in). When Pi is absent it installs the pinned version via npm. If no OpenRouter credentials exist it prompts once with hidden input and stores the key in Pi's own auth store — never in cyberdeck files or MCP configuration. It then registers the server with Claude Code (user scope, plus permission rules: allow `research`, ask for `implement`) and Codex (config block with matching approval modes) when those CLIs are present, and verifies that the resolved configuration loads.
+
 ## Configure
 
 Edit `cyberdeck.config.json`:

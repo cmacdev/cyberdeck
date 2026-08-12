@@ -1,4 +1,5 @@
 import { readFile, realpath, stat } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 
 export const THINKING_LEVELS = [
@@ -102,7 +103,14 @@ async function canonicalDirectory(value, configDirectory, label) {
     fail(`${label} does not exist: ${resolved} (${error.message})`);
   }
   if (!information.isDirectory()) fail(`${label} is not a directory: ${resolved}`);
-  return realpath(resolved);
+  const canonical = await realpath(resolved);
+  const home = await realpath(os.homedir());
+  if (canonical === path.parse(canonical).root || canonical === home) {
+    fail(
+      `${label} must not be the filesystem root or the home directory (${canonical}); start the MCP client inside a project, or set explicit workspaceRoots.`,
+    );
+  }
+  return canonical;
 }
 
 function parseProfile(raw, name) {
