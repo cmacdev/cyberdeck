@@ -1,6 +1,6 @@
 # Cyberdeck
 
-Cyberdeck is a small local MCP server that turns an existing Pi + OpenRouter setup into a typed, inspectable Codex tool boundary. It deliberately does not contain a skill or a hidden routing prompt.
+Cyberdeck is a small local MCP server that turns an existing Pi + OpenRouter setup into a typed, inspectable tool boundary for Codex and Claude Code. It deliberately does not contain a skill or a hidden routing prompt.
 
 The server exposes two tools:
 
@@ -84,6 +84,27 @@ Restart Codex after changing MCP configuration. If Pi authenticates from its own
 
 Codex currently supports stdio MCP configuration with per-server commands, working directories, environment-variable forwarding, enabled-tool allowlists, timeouts, and per-tool approval modes. See the official [Codex configuration reference](https://learn.chatgpt.com/docs/config-file/config-reference) and [MCP setup guide](https://learn.chatgpt.com/docs/extend/mcp).
 
+## Connect Claude Code
+
+Register once at user scope, replacing the two absolute paths:
+
+```sh
+claude mcp add --scope user cyberdeck -- node /absolute/path/to/cyberdeck/bin/cyberdeck-mcp.mjs --config /absolute/path/to/cyberdeck/cyberdeck.config.json
+```
+
+Claude Code launches stdio servers from the directory the session was started in, so the default `@cwd` workspace root resolves to the current project — the Claude Code equivalent of Codex's explicit `cwd` line. Mirror the Codex approval modes with permission rules in `~/.claude/settings.json`:
+
+```json
+{
+  "permissions": {
+    "allow": ["mcp__cyberdeck__research"],
+    "ask": ["mcp__cyberdeck__implement"]
+  }
+}
+```
+
+`claude mcp list` shows connection health. Restart the session after changing MCP or permission configuration.
+
 ## Typed calls
 
 The calling skill supplies these fields to either tool:
@@ -131,7 +152,7 @@ The test launches Cyberdeck over stdio and uses a fake Pi binary. It verifies cu
 
 ## Protocol and design notes
 
-Cyberdeck uses newline-delimited JSON-RPC over stdio with no runtime dependencies. It implements the current MCP `2026-07-28` stateless discovery/result shape and legacy initialization versions used by existing Codex clients. The wire implementation is intentionally small enough to inspect in `src/server.mjs`.
+Cyberdeck uses newline-delimited JSON-RPC over stdio with no runtime dependencies. It implements the current MCP `2026-07-28` stateless discovery/result shape and legacy initialization versions used by current Codex and Claude Code clients (Claude Code negotiates `2025-06-18`). The wire implementation is intentionally small enough to inspect in `src/server.mjs`.
 
 OpenAI's current MCP guidance calls for explicit input/output schemas, accurate safety annotations, concise structured results, and server-side enforcement; those requirements shaped the split tool surface. See [Build an MCP server](https://developers.openai.com/plugins/build/mcp-server) and [Define tools](https://developers.openai.com/plugins/plan/tools). The protocol details follow the current [MCP tools specification](https://modelcontextprotocol.io/specification/2026-07-28/server/tools).
 
