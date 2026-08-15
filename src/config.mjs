@@ -15,6 +15,7 @@ export const THINKING_LEVELS = [
 const PROFILE_NAMES = ["research", "implementation"];
 const MUTATING_BUILT_INS = new Set(["bash", "edit", "write"]);
 const TOOL_NAME = /^[A-Za-z0-9_.:-]+$/;
+const ROLE_NAME = /^[a-z][a-z0-9_]{0,31}$/;
 
 export class ConfigurationError extends Error {
   constructor(message) {
@@ -113,12 +114,55 @@ async function canonicalDirectory(value, configDirectory, label) {
   return canonical;
 }
 
+function parseRole(raw, label, profileCeiling) {
+  const role = expectObject(raw, label);
+  expectKnownKeys(
+    role,
+    label,
+    new Set(["model", "when", "defaultThinking", "maxThinking", "promptPreamble"]),
+  );
+  const model = expectString(role.model, `${label}.model`).trim();
+  if (model.length > 200) fail(`${label}.model cannot exceed 200 characters.`);
+  const when = expectString(role.when, `${label}.when`);
+  if (when.length > 240) fail(`${label}.when cannot exceed 240 characters.`);
+  const defaultThinking = expectThinking(
+    role.defaultThinking ?? profileCeiling.defaultThinking,
+    `${label}.defaultThinking`,
+  );
+  const maxThinking = expectThinking(
+    role.maxThinking ?? profileCeiling.maxThinking,
+    `${label}.maxThinking`,
+  );
+  if (THINKING_LEVELS.indexOf(defaultThinking) > THINKING_LEVELS.indexOf(maxThinking)) {
+    fail(`${label}.defaultThinking cannot exceed maxThinking.`);
+  }
+  if (THINKING_LEVELS.indexOf(maxThinking) > THINKING_LEVELS.indexOf(profileCeiling.maxThinking)) {
+    fail(`${label}.maxThinking cannot exceed the profile maximum ${profileCeiling.maxThinking}.`);
+  }
+  const promptPreamble =
+    role.promptPreamble === undefined
+      ? profileCeiling.promptPreamble
+      : expectString(role.promptPreamble, `${label}.promptPreamble`, { allowEmpty: true });
+  if (promptPreamble.length > 4000) {
+    fail(`${label}.promptPreamble cannot exceed 4000 characters.`);
+  }
+  return { model, when, defaultThinking, maxThinking, promptPreamble };
+}
+
 function parseProfile(raw, name) {
   const profile = expectObject(raw, `profiles.${name}`);
   expectKnownKeys(
     profile,
     `profiles.${name}`,
-    new Set(["modelPatterns", "defaultThinking", "maxThinking", "tools", "promptPreamble"]),
+    new Set([
+      "modelPatterns",
+      "defaultRole",
+      "defaultThinking",
+      "maxThinking",
+      "tools",
+      "promptPreamble",
+      "roles",
+    ]),
   );
   const modelPatterns = expectStringArray(
     profile.modelPatterns,
@@ -152,7 +196,41 @@ function parseProfile(raw, name) {
   if (promptPreamble.length > 4000) {
     fail(`profiles.${name}.promptPreamble cannot exceed 4000 characters.`);
   }
-  return { modelPatterns, defaultThinking, maxThinking, tools, promptPreamble };
+
+  const rolesRaw = expectObject(profile.roles, `profiles.${name}.roles`);
+  const roleNames = Object.keys(rolesRaw);
+  if (roleNames.length === 0) fail(`profiles.${name}.roles must define at least one role.`);
+  if (roleNames.length > 16) fail(`profiles.${name}.roles cannot contain more than 16 roles.`);
+  const roles = {};
+  for (const roleName of roleNames) {
+    if (!ROLE_NAME.test(roleName)) {
+      fail(`profiles.${name}.roles has an invalid role name: ${roleName}.`);
+    }
+    const role = parseRole(rolesRaw[roleName], `profiles.${name}.roles.${roleName}`, {
+      defaultThinking,
+      maxThinking,
+      promptPreamble,
+    });
+    if (!matchesModelPattern(role.model, modelPatterns)) {
+      fail(
+        `profiles.${name}.roles.${roleName}.model ${JSON.stringify(role.model)} is not allowed by modelPatterns.`,
+      );
+    }
+    roles[roleName] = role;
+  }
+  const defaultRole = expectString(profile.defaultRole, `profiles.${name}.defaultRole`);
+  if (!roles[defaultRole]) {
+    fail(`profiles.${name}.defaultRole ${JSON.stringify(defaultRole)} is not a defined role.`);
+  }
+  return {
+    modelPatterns,
+    defaultRole,
+    defaultThinking,
+    maxThinking,
+    tools,
+    promptPreamble,
+    roles,
+  };
 }
 
 export async function loadConfig(configPath) {
@@ -330,6 +408,19 @@ export function isWithinRoot(candidate, root) {
   );
 }
 
+function publicProfile(profile, permission) {
+  return {
+    permission,
+    defaultRole: profile.defaultRole,
+    modelPatterns: profile.modelPatterns,
+    defaultThinking: profile.defaultThinking,
+    maxThinking: profile.maxThinking,
+    tools: profile.tools,
+    promptPreamble: profile.promptPreamble,
+    roles: profile.roles,
+  };
+}
+
 export function publicConfiguration(config) {
   return {
     provider: config.provider,
@@ -345,16 +436,38 @@ export function publicConfiguration(config) {
     },
     limits: config.limits,
     profiles: {
-      research: {
-        permission: "read-only tool policy",
-        ...config.profiles.research,
-      },
-      implementation: {
-        permission: "write/shell-capable tool policy",
-        ...config.profiles.implementation,
-      },
+      research: publicProfile(config.profiles.research, "read-only tool policy"),
+      implementation: publicProfile(
+        config.profiles.implementation,
+        "write/shell-capable tool policy",
+      ),
     },
     securityBoundary:
       "Cyberdeck validates roots and Pi tool names, but Pi has no built-in OS sandbox. Run it in an OS/container sandbox for a hard filesystem or network boundary.",
   };
+}
+
+export function publicCatalog(config) {
+  const catalog = {};
+  for (const [profileName, profile] of Object.entries(config.profiles)) {
+    catalog[profileName] = {
+      tool: profileName === "implementation" ? "implement" : "research",
+      permission:
+        profileName === "research" ? "read-only tool policy" : "write/shell-capable tool policy",
+      defaultRole: profile.defaultRole,
+      tools: profile.tools,
+      roles: Object.fromEntries(
+        Object.entries(profile.roles).map(([name, role]) => [
+          name,
+          {
+            model: role.model,
+            when: role.when,
+            defaultThinking: role.defaultThinking,
+            maxThinking: role.maxThinking,
+          },
+        ]),
+      ),
+    };
+  }
+  return catalog;
 }

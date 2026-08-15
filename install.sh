@@ -189,6 +189,77 @@ else
   note "Codex not found; skipped (re-run after installing it)"
 fi
 
+# --- Register with OpenCode --------------------------------------------------------
+OPENCODE_CONFIG=""
+if [ -f "$HOME/.config/opencode/opencode.json" ]; then
+  OPENCODE_CONFIG="$HOME/.config/opencode/opencode.json"
+elif command -v opencode >/dev/null 2>&1 || [ -d "$HOME/.config/opencode" ]; then
+  OPENCODE_CONFIG="$HOME/.config/opencode/opencode.json"
+fi
+if [ -n "$OPENCODE_CONFIG" ]; then
+  if [ -f "$OPENCODE_CONFIG" ] && grep -q '"cyberdeck"' "$OPENCODE_CONFIG"; then
+    note "OpenCode: cyberdeck already mentioned in $OPENCODE_CONFIG; left untouched"
+  elif [ "$DRY_RUN" -eq 1 ]; then
+    note "OpenCode: would register cyberdeck in $OPENCODE_CONFIG"
+  else
+    node -e '
+      const { mkdirSync, readFileSync, writeFileSync, existsSync } = require("node:fs");
+      const path = require("node:path");
+      const file = process.argv[1];
+      const command = process.argv[2];
+      const configPath = process.argv[3];
+      mkdirSync(path.dirname(file), { recursive: true });
+      const settings = existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : {};
+      settings.mcp = settings.mcp ?? {};
+      if (!settings.mcp.cyberdeck) {
+        settings.mcp.cyberdeck = {
+          type: "local",
+          command: ["node", command, "--config", configPath],
+          enabled: true,
+        };
+        writeFileSync(file, JSON.stringify(settings, null, 2) + "\n");
+      }
+    ' "$OPENCODE_CONFIG" "$APP_DIR/bin/cyberdeck-mcp.mjs" "$CONFIG_PATH"
+    note "OpenCode: registered cyberdeck in $OPENCODE_CONFIG"
+  fi
+else
+  note "OpenCode not found; skipped (re-run after installing it)"
+fi
+
+# --- Register with Grok Build ------------------------------------------------------
+if command -v grok >/dev/null 2>&1; then
+  if grok mcp list 2>/dev/null | grep -q 'cyberdeck'; then
+    note "Grok Build: cyberdeck already registered; left untouched"
+  elif [ "$DRY_RUN" -eq 1 ]; then
+    note "Grok Build: would register cyberdeck via grok mcp add"
+  elif grok mcp add cyberdeck -- node "$APP_DIR/bin/cyberdeck-mcp.mjs" --config "$CONFIG_PATH"; then
+    note "Grok Build: registered cyberdeck via grok mcp add"
+  else
+    note "Grok Build: grok mcp add failed; skipped"
+  fi
+elif [ -d "$HOME/.grok" ]; then
+  GROK_CONFIG="$HOME/.grok/config.toml"
+  if [ -f "$GROK_CONFIG" ] && grep -q '^\[mcp_servers\.cyberdeck\]' "$GROK_CONFIG"; then
+    note "Grok Build: cyberdeck already registered; left untouched"
+  elif [ "$DRY_RUN" -eq 1 ]; then
+    note "Grok Build: would append [mcp_servers.cyberdeck] to $GROK_CONFIG"
+  else
+    mkdir -p "$HOME/.grok"
+    cat >>"$GROK_CONFIG" <<EOF
+
+# Added by cyberdeck install.sh.
+[mcp_servers.cyberdeck]
+command = "node"
+args = ["$APP_DIR/bin/cyberdeck-mcp.mjs", "--config", "$CONFIG_PATH"]
+startup_timeout_sec = 10
+tool_timeout_sec = 1900
+EOF
+    note "Grok Build: appended cyberdeck block to $GROK_CONFIG"
+  fi
+else
+  note "Grok Build not found; skipped (re-run after installing it)"
+fi
+
 # --- Verify -------------------------------------------------------------------------
 if [ "$DRY_RUN" -eq 1 ]; then
   note "would verify: resolved config loads and schemas build (bin/cyberdeck-mcp.mjs --inspect)"
@@ -201,4 +272,4 @@ fi
 echo
 echo "cyberdeck-install: done. Summary:"
 for line in "${SUMMARY[@]}"; do echo "  - $line"; done
-echo "Restart Claude Code / Codex sessions to pick up the server."
+echo "Restart the calling MCP client to pick up the server."

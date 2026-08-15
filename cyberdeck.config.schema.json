@@ -104,15 +104,47 @@
         "max"
       ]
     },
+    "role": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "model",
+        "when"
+      ],
+      "properties": {
+        "model": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "when": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 240
+        },
+        "defaultThinking": {
+          "$ref": "#/$defs/thinking"
+        },
+        "maxThinking": {
+          "$ref": "#/$defs/thinking"
+        },
+        "promptPreamble": {
+          "type": "string",
+          "maxLength": 4000
+        }
+      }
+    },
     "profile": {
       "type": "object",
       "additionalProperties": false,
       "required": [
         "modelPatterns",
+        "defaultRole",
         "defaultThinking",
         "maxThinking",
         "tools",
-        "promptPreamble"
+        "promptPreamble",
+        "roles"
       ],
       "properties": {
         "modelPatterns": {
@@ -125,6 +157,12 @@
             "minLength": 1,
             "maxLength": 200
           }
+        },
+        "defaultRole": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
+          "pattern": "^[a-z][a-z0-9_]{0,31}$"
         },
         "defaultThinking": {
           "$ref": "#/$defs/thinking"
@@ -146,6 +184,17 @@
         "promptPreamble": {
           "type": "string",
           "maxLength": 4000
+        },
+        "roles": {
+          "type": "object",
+          "minProperties": 1,
+          "maxProperties": 16,
+          "additionalProperties": {
+            "$ref": "#/$defs/role"
+          },
+          "propertyNames": {
+            "pattern": "^[a-z][a-z0-9_]{0,31}$"
+          }
         }
       }
     },

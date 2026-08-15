@@ -16,6 +16,7 @@ import { emptyUsage } from "./contracts.mjs";
 const INPUT_KEYS = new Set([
   "task",
   "working_directory",
+  "role",
   "model",
   "thinking",
   "context_files",
@@ -119,18 +120,26 @@ async function validateInput(profileName, rawInput, config) {
   const input = asObject(rawInput);
   const profile = config.profiles[profileName];
   const task = requiredString(input.task, "task", config.limits.maxTaskCharacters);
-  const model = requiredString(input.model, "model").trim();
-  if (!matchesModelPattern(model, profile.modelPatterns)) {
+  const roleName = input.role === undefined ? profile.defaultRole : requiredString(input.role, "role");
+  const role = profile.roles[roleName];
+  if (!role) {
     inputFail(
-      `model ${JSON.stringify(model)} is not allowed by the ${profileName} profile; inspect cyberdeck://profiles for modelPatterns.`,
+      `role ${JSON.stringify(roleName)} is not defined for ${profileName}; inspect cyberdeck://catalog.`,
     );
   }
-  const thinking = input.thinking ?? profile.defaultThinking;
+  const model =
+    input.model === undefined ? role.model : requiredString(input.model, "model").trim();
+  if (!matchesModelPattern(model, profile.modelPatterns)) {
+    inputFail(
+      `model ${JSON.stringify(model)} is not allowed by the ${profileName} profile; inspect cyberdeck://catalog.`,
+    );
+  }
+  const thinking = input.thinking ?? role.defaultThinking;
   if (!THINKING_LEVELS.includes(thinking)) {
     inputFail(`thinking must be one of: ${THINKING_LEVELS.join(", ")}.`);
   }
-  if (THINKING_LEVELS.indexOf(thinking) > THINKING_LEVELS.indexOf(profile.maxThinking)) {
-    inputFail(`thinking ${thinking} exceeds the ${profileName} maximum ${profile.maxThinking}.`);
+  if (THINKING_LEVELS.indexOf(thinking) > THINKING_LEVELS.indexOf(role.maxThinking)) {
+    inputFail(`thinking ${thinking} exceeds the ${roleName} maximum ${role.maxThinking}.`);
   }
   const contextValues = stringArray(
     input.context_files,
@@ -140,8 +149,10 @@ async function validateInput(profileName, rawInput, config) {
   const constraints = stringArray(input.constraints, "constraints", 20, 500);
   return {
     task,
+    role: roleName,
     model,
     thinking,
+    promptPreamble: role.promptPreamble,
     constraints,
     timeoutSeconds: optionalInteger(
       input.timeout_seconds,
@@ -362,8 +373,8 @@ export async function runPi(profileName, rawInput, config, signal) {
     config.pi.trustProjectFiles ? "--approve" : "--no-approve",
   ];
   if (!config.pi.loadContextFiles) piArgs.push("--no-context-files");
-  if (profile.promptPreamble) {
-    piArgs.push("--append-system-prompt", profile.promptPreamble);
+  if (input.promptPreamble) {
+    piArgs.push("--append-system-prompt", input.promptPreamble);
   }
   for (const file of input.contextFiles) piArgs.push(`@${file}`);
   piArgs.push(prompt);
@@ -372,6 +383,7 @@ export async function runPi(profileName, rawInput, config, signal) {
     runId,
     createdAt: new Date().toISOString(),
     profile: profileName,
+    role: input.role,
     provider: config.provider,
     model: input.model,
     thinking: input.thinking,
@@ -447,6 +459,7 @@ export async function runPi(profileName, rawInput, config, signal) {
     ok,
     run_id: runId,
     profile: profileName,
+    role: input.role,
     status,
     model: execution.state.reportedModel || input.model,
     thinking: input.thinking,

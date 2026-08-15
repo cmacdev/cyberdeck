@@ -1,0 +1,10 @@
+# Copy this block into ~/.grok/config.toml and replace both absolute paths.
+[mcp_servers.cyberdeck]
+command = "node"
+args = [
+  "/absolute/path/to/cyberdeck/bin/cyberdeck-mcp.mjs",
+  "--config",
+  "/absolute/path/to/cyberdeck/cyberdeck.config.json",
+]
+startup_timeout_sec = 10
+tool_timeout_sec = 1900

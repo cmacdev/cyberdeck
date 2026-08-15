@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "A thin, typed MCP boundary around Pi and OpenRouter.",
+  "description": "A thin, typed MCP delegation boundary around Pi and OpenRouter.",
   "bin": {
     "cyberdeck-mcp": "./bin/cyberdeck-mcp.mjs"
   },

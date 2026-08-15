@@ -9,18 +9,68 @@ export const LEGACY_PROTOCOL_VERSIONS = Object.freeze([
   "2024-11-05",
 ]);
 export const PROFILE_RESOURCE_URI = "cyberdeck://profiles";
+export const CATALOG_RESOURCE_URI = "cyberdeck://catalog";
 
-export const SERVER_INSTRUCTIONS =
-  "Use research for delegated read-only investigation. Use implement only when workspace changes are authorized. Model IDs are explicit and checked against visible profile policy. Results are capped; full Pi event logs are saved as local artifacts. Read cyberdeck://profiles for resolved policy.";
+function roleLines(profile) {
+  return Object.entries(profile.roles).map(
+    ([name, role]) => `${name} (${role.model}): ${role.when}`,
+  );
+}
+
+export function buildServerInstructions(config) {
+  const research = config.profiles.research;
+  const implementation = config.profiles.implementation;
+  return [
+    "Stay in the calling harness. Delegate through these two tools; do not spawn Pi yourself.",
+    `research is read-only. Default role ${research.defaultRole}. Roles: ${roleLines(research).join(" | ")}`,
+    `implement may write or run shell. Default role ${implementation.defaultRole}. Roles: ${roleLines(implementation).join(" | ")}`,
+    "Omit model to use the role default. Override model only when the task needs a listed OpenRouter ID. Results are capped; read cyberdeck://catalog for the role table.",
+  ].join(" ");
+}
+
+function allowedModels(profile) {
+  return [
+    ...new Set([
+      ...Object.values(profile.roles).map((role) => role.model),
+      ...profile.modelPatterns.filter((pattern) => !pattern.includes("*")),
+    ]),
+  ];
+}
 
 function modelProperty(profile) {
   const exactModels = profile.modelPatterns.filter((pattern) => !pattern.includes("*"));
   const hasWildcard = profile.modelPatterns.some((pattern) => pattern.includes("*"));
+  const listed = allowedModels(profile);
   return {
     type: "string",
     minLength: 1,
-    ...(hasWildcard ? {} : { enum: exactModels }),
-    description: "Exact OpenRouter model ID allowed by this profile's visible configuration.",
+    ...(hasWildcard || listed.length === 0 ? {} : { enum: listed }),
+    description:
+      "Optional OpenRouter model ID. Omit to use the selected role's model. Must match this profile's modelPatterns.",
+  };
+}
+
+function roleProperty(profile) {
+  return {
+    type: "string",
+    enum: Object.keys(profile.roles),
+    default: profile.defaultRole,
+    description: `Preset agent for this tool. ${roleLines(profile).join(" ")}`,
+  };
+}
+
+function thinkingProperty(profile) {
+  const ceiling = Object.values(profile.roles).reduce(
+    (highest, role) =>
+      THINKING_LEVELS.indexOf(role.maxThinking) > THINKING_LEVELS.indexOf(highest)
+        ? role.maxThinking
+        : highest,
+    profile.maxThinking,
+  );
+  return {
+    type: "string",
+    enum: THINKING_LEVELS.slice(0, THINKING_LEVELS.indexOf(ceiling) + 1),
+    description: "Pi reasoning level, capped by the selected role. Omit to use the role default.",
   };
 }
 
@@ -31,7 +81,7 @@ function inputSchema(config, profileName) {
     $schema: "https://json-schema.org/draft/2020-12/schema",
     type: "object",
     additionalProperties: false,
-    required: ["task", "working_directory", "model"],
+    required: ["task", "working_directory"],
     properties: {
       task: {
         type: "string",
@@ -44,16 +94,9 @@ function inputSchema(config, profileName) {
         minLength: 1,
         description: "Existing absolute directory inside a configured workspace root.",
       },
+      role: roleProperty(profile),
       model: modelProperty(profile),
-      thinking: {
-        type: "string",
-        enum: THINKING_LEVELS.slice(
-          0,
-          THINKING_LEVELS.indexOf(profile.maxThinking) + 1,
-        ),
-        default: profile.defaultThinking,
-        description: "Pi reasoning level, capped by this profile.",
-      },
+      thinking: thinkingProperty(profile),
       context_files: {
         type: "array",
         maxItems: limits.maxContextFiles,
@@ -93,6 +136,7 @@ export const OUTPUT_SCHEMA = Object.freeze({
     "ok",
     "run_id",
     "profile",
+    "role",
     "status",
     "model",
     "thinking",
@@ -109,6 +153,7 @@ export const OUTPUT_SCHEMA = Object.freeze({
     ok: { type: "boolean" },
     run_id: { type: ["string", "null"] },
     profile: { enum: ["research", "implementation"] },
+    role: { type: ["string", "null"] },
     status: {
       enum: ["succeeded", "failed", "timed_out", "cancelled", "output_limit", "rejected"],
     },
@@ -149,12 +194,13 @@ export const OUTPUT_SCHEMA = Object.freeze({
 });
 
 export function buildTools(config) {
+  const research = config.profiles.research;
+  const implementation = config.profiles.implementation;
   return [
     {
       name: "research",
       title: "Delegate read-only research",
-      description:
-        "Run an ephemeral Pi/OpenRouter agent under the server's read-only tool policy. Use for investigation, review, comparison, or critique; it cannot receive Pi's bash/edit/write built-ins.",
+      description: `Read-only Pi/OpenRouter agent. Cannot receive bash/edit/write. Pick a role or accept default ${research.defaultRole}. ${roleLines(research).join(" ")}`,
       inputSchema: inputSchema(config, "research"),
       outputSchema: OUTPUT_SCHEMA,
       annotations: {
@@ -167,8 +213,7 @@ export function buildTools(config) {
     {
       name: "implement",
       title: "Delegate implementation",
-      description:
-        "Run an ephemeral Pi/OpenRouter coding agent in a validated workspace. Use only for authorized implementation because its configured policy may include shell and file-write tools.",
+      description: `Write/shell-capable Pi/OpenRouter coding agent. Use only when workspace changes are authorized. Pick a role or accept default ${implementation.defaultRole}. ${roleLines(implementation).join(" ")}`,
       inputSchema: inputSchema(config, "implementation"),
       outputSchema: OUTPUT_SCHEMA,
       annotations: {

@@ -100,17 +100,43 @@ test("typed MCP contract enforces profiles and invokes Pi without network", asyn
     profiles: {
       research: {
         modelPatterns: ["research/*"],
+        defaultRole: "mechanical",
         defaultThinking: "medium",
         maxThinking: "high",
         tools: ["read", "grep", "find", "ls", "web_search"],
         promptPreamble: "Research only.",
+        roles: {
+          mechanical: {
+            model: "research/model-a",
+            when: "Cheap survey and citation.",
+            defaultThinking: "medium",
+            maxThinking: "high",
+          },
+          verify: {
+            model: "research/model-c",
+            when: "Independent check of claimed results.",
+            defaultThinking: "high",
+            maxThinking: "high",
+          },
+        },
       },
       implementation: {
         modelPatterns: ["implementation/*"],
+        defaultRole: "intellectual",
         defaultThinking: "high",
         maxThinking: "max",
         tools: ["read", "grep", "find", "ls", "bash", "edit", "write"],
         promptPreamble: "Implement and verify.",
+        roles: {
+          gritty: {
+            model: "implementation/model-k",
+            when: "Ambiguous or cross-cutting implementation.",
+          },
+          intellectual: {
+            model: "implementation/model-b",
+            when: "Bounded spec-exact diffs.",
+          },
+        },
       },
     },
   };
@@ -157,7 +183,9 @@ test("typed MCP contract enforces profiles and invokes Pi without network", asyn
   );
   assert.equal(listed.tools[0].annotations.readOnlyHint, true);
   assert.equal(listed.tools[1].annotations.destructiveHint, true);
-  assert.deepEqual(listed.tools[0].inputSchema.properties.model.enum, undefined);
+  assert.deepEqual(listed.tools[0].inputSchema.required, ["task", "working_directory"]);
+  assert.deepEqual(listed.tools[0].inputSchema.properties.role.enum, ["mechanical", "verify"]);
+  assert.equal(listed.tools[0].inputSchema.properties.role.default, "mechanical");
   assert.deepEqual(listed.tools[0].inputSchema.properties.thinking.enum, [
     "off",
     "minimal",
@@ -166,14 +194,25 @@ test("typed MCP contract enforces profiles and invokes Pi without network", asyn
     "high",
   ]);
   assert.ok(listed.tools[0].outputSchema.properties.artifacts);
+  assert.match(listed.tools[0].description, /mechanical \(research\/model-a\)/);
 
   const resources = await client.request("resources/list");
-  assert.equal(resources.resources[0].uri, "cyberdeck://profiles");
+  assert.deepEqual(
+    resources.resources.map((resource) => resource.uri),
+    ["cyberdeck://catalog", "cyberdeck://profiles"],
+  );
+  const catalogResource = await client.request("resources/read", {
+    uri: "cyberdeck://catalog",
+  });
+  const catalog = JSON.parse(catalogResource.contents[0].text);
+  assert.equal(catalog.research.defaultRole, "mechanical");
+  assert.equal(catalog.research.roles.mechanical.model, "research/model-a");
   const profileResource = await client.request("resources/read", {
     uri: "cyberdeck://profiles",
   });
   const resolvedPolicy = JSON.parse(profileResource.contents[0].text);
   assert.deepEqual(resolvedPolicy.profiles.research.tools, config.profiles.research.tools);
+  assert.equal(resolvedPolicy.profiles.research.defaultRole, "mechanical");
   assert.match(resolvedPolicy.securityBoundary, /no built-in OS sandbox/i);
 
   const researchCall = await client.request("tools/call", {
@@ -181,7 +220,6 @@ test("typed MCP contract enforces profiles and invokes Pi without network", asyn
     arguments: {
       task: "Inspect the fixture and summarize it.",
       working_directory: workspace,
-      model: "research/model-a",
       thinking: "high",
       context_files: [contextFile],
       constraints: ["Do not edit files."],
@@ -191,6 +229,7 @@ test("typed MCP contract enforces profiles and invokes Pi without network", asyn
   assert.equal(researchCall.resultType, "complete");
   assert.equal(researchCall.structuredContent.ok, true);
   assert.equal(researchCall.structuredContent.profile, "research");
+  assert.equal(researchCall.structuredContent.role, "mechanical");
   const researchInvocation = JSON.parse(researchCall.structuredContent.final_output);
   assert.equal(argumentValue(researchInvocation.argv, "--provider"), "openrouter");
   assert.equal(argumentValue(researchInvocation.argv, "--model"), "research/model-a");
@@ -220,6 +259,7 @@ test("typed MCP contract enforces profiles and invokes Pi without network", asyn
     await readFile(researchCall.structuredContent.artifacts.request, "utf8"),
   );
   assert.equal(recordedRequest.model, "research/model-a");
+  assert.equal(recordedRequest.role, "mechanical");
   assert.deepEqual(recordedRequest.tools, config.profiles.research.tools);
 
   const implementationCall = await client.request("tools/call", {
@@ -227,10 +267,12 @@ test("typed MCP contract enforces profiles and invokes Pi without network", asyn
     arguments: {
       task: "Describe the implementation invocation without changing anything.",
       working_directory: workspace,
-      model: "implementation/model-b",
+      role: "intellectual",
     },
   });
   assert.equal(implementationCall.structuredContent.profile, "implementation");
+  assert.equal(implementationCall.structuredContent.role, "intellectual");
+  assert.equal(implementationCall.structuredContent.model, "implementation/model-b");
   const implementationInvocation = JSON.parse(
     implementationCall.structuredContent.final_output,
   );
@@ -238,6 +280,17 @@ test("typed MCP contract enforces profiles and invokes Pi without network", asyn
     argumentValue(implementationInvocation.argv, "--tools"),
     "read,grep,find,ls,bash,edit,write",
   );
+
+  const verifyCall = await client.request("tools/call", {
+    name: "research",
+    arguments: {
+      task: "Check the fixture independently.",
+      working_directory: workspace,
+      role: "verify",
+    },
+  });
+  assert.equal(verifyCall.structuredContent.role, "verify");
+  assert.equal(argumentValue(JSON.parse(verifyCall.structuredContent.final_output).argv, "--model"), "research/model-c");
 
   const rejectedModel = await client.request("tools/call", {
     name: "research",
@@ -257,7 +310,6 @@ test("typed MCP contract enforces profiles and invokes Pi without network", asyn
     arguments: {
       task: "This must not launch either.",
       working_directory: outsideWorkspace,
-      model: "research/model-a",
     },
   });
   assert.equal(rejectedRoot.isError, true);
@@ -268,7 +320,6 @@ test("typed MCP contract enforces profiles and invokes Pi without network", asyn
     arguments: {
       task: "Return the normal fake payload.",
       working_directory: workspace,
-      model: "research/model-a",
       return_characters: 80,
     },
   });
@@ -281,7 +332,6 @@ test("typed MCP contract enforces profiles and invokes Pi without network", asyn
     arguments: {
       task: "FAKE_FAIL",
       working_directory: workspace,
-      model: "research/model-a",
     },
   });
   assert.equal(failed.isError, true);
@@ -295,7 +345,6 @@ test("typed MCP contract enforces profiles and invokes Pi without network", asyn
     arguments: {
       task: "FAKE_WAIT",
       working_directory: workspace,
-      model: "research/model-a",
       timeout_seconds: 10,
     },
   });
@@ -304,7 +353,6 @@ test("typed MCP contract enforces profiles and invokes Pi without network", asyn
     arguments: {
       task: "This launch exceeds the concurrency ceiling.",
       working_directory: workspace,
-      model: "research/model-a",
     },
   });
   assert.equal(concurrencyRejected.isError, true);

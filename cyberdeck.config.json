@@ -25,8 +25,11 @@
   "profiles": {
     "research": {
       "modelPatterns": [
-        "*"
+        "deepseek/deepseek-v4-flash-0731",
+        "z-ai/glm-5.2",
+        "x-ai/grok-4.6"
       ],
+      "defaultRole": "mechanical",
       "defaultThinking": "high",
       "maxThinking": "max",
       "tools": [
@@ -35,12 +38,34 @@
         "find",
         "ls"
       ],
-      "promptPreamble": "Investigate and report evidence. Do not modify files or external state. Clearly separate facts, inferences, and unknowns."
+      "promptPreamble": "Investigate and report evidence. Do not modify files or external state. Clearly separate facts, inferences, and unknowns.",
+      "roles": {
+        "mechanical": {
+          "model": "deepseek/deepseek-v4-flash-0731",
+          "when": "Cheap read-only survey, inventory, grep, and citation.",
+          "defaultThinking": "medium",
+          "maxThinking": "high"
+        },
+        "verify": {
+          "model": "z-ai/glm-5.2",
+          "when": "Independent check of someone else's work or a claimed result.",
+          "defaultThinking": "high",
+          "maxThinking": "max"
+        },
+        "adversarial": {
+          "model": "x-ai/grok-4.6",
+          "when": "Attack a plan, find holes, or run a hostile review.",
+          "defaultThinking": "high",
+          "maxThinking": "max"
+        }
+      }
     },
     "implementation": {
       "modelPatterns": [
-        "*"
+        "moonshotai/kimi-k3",
+        "x-ai/grok-4.6"
       ],
+      "defaultRole": "intellectual",
       "defaultThinking": "high",
       "maxThinking": "max",
       "tools": [
@@ -52,7 +77,21 @@
         "edit",
         "write"
       ],
-      "promptPreamble": "Implement only the requested change inside the supplied workspace. Preserve unrelated work, verify proportionately, and report changed files and checks."
+      "promptPreamble": "Implement only the requested change inside the supplied workspace. Preserve unrelated work, verify proportionately, and report changed files and checks.",
+      "roles": {
+        "gritty": {
+          "model": "moonshotai/kimi-k3",
+          "when": "Ambiguous or cross-cutting work; thorough, states assumptions.",
+          "defaultThinking": "high",
+          "maxThinking": "max"
+        },
+        "intellectual": {
+          "model": "x-ai/grok-4.6",
+          "when": "Bounded, spec-exact, reviewable diffs; do not expand scope.",
+          "defaultThinking": "high",
+          "maxThinking": "max"
+        }
+      }
     }
   }
 }

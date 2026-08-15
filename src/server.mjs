@@ -1,12 +1,13 @@
 import { createInterface } from "node:readline";
 
-import { publicConfiguration } from "./config.mjs";
+import { publicCatalog, publicConfiguration } from "./config.mjs";
 import {
+  CATALOG_RESOURCE_URI,
   LEGACY_PROTOCOL_VERSIONS,
   MODERN_PROTOCOL_VERSION,
   PROFILE_RESOURCE_URI,
   SERVER_INFO,
-  SERVER_INSTRUCTIONS,
+  buildServerInstructions,
   buildTools,
   emptyArtifacts,
   emptyUsage,
@@ -59,14 +60,23 @@ function errorResponse(id, error) {
 
 function rejectedResult(profileName, rawInput, config, error) {
   const profile = config.profiles[profileName];
+  const requestedRole =
+    typeof rawInput?.role === "string" ? rawInput.role : profile.defaultRole;
+  const role = profile.roles[requestedRole];
   return {
     ok: false,
     run_id: null,
     profile: profileName,
+    role: requestedRole,
     status: "rejected",
-    model: typeof rawInput?.model === "string" ? rawInput.model : null,
+    model:
+      typeof rawInput?.model === "string"
+        ? rawInput.model
+        : (role?.model ?? null),
     thinking:
-      typeof rawInput?.thinking === "string" ? rawInput.thinking : profile.defaultThinking,
+      typeof rawInput?.thinking === "string"
+        ? rawInput.thinking
+        : (role?.defaultThinking ?? profile.defaultThinking),
     tools: profile.tools,
     exit_code: null,
     duration_ms: 0,
@@ -95,19 +105,52 @@ function legacyProtocolVersion(requested) {
   return LEGACY_PROTOCOL_VERSIONS[0];
 }
 
+function listedResources() {
+  return [
+    {
+      uri: CATALOG_RESOURCE_URI,
+      name: "Cyberdeck role catalog",
+      title: "Cyberdeck role catalog",
+      description: "Recommended roles, bound models, and when to use each one.",
+      mimeType: "application/json",
+    },
+    {
+      uri: PROFILE_RESOURCE_URI,
+      name: "Resolved Cyberdeck profiles",
+      title: "Cyberdeck profile policy",
+      description:
+        "Resolved roles, model patterns, Pi tool allowlists, path roots, limits, and security boundary.",
+      mimeType: "application/json",
+    },
+  ];
+}
+
+function readResource(uri, config) {
+  if (uri === CATALOG_RESOURCE_URI) {
+    return {
+      uri,
+      mimeType: "application/json",
+      text: `${JSON.stringify(publicCatalog(config), null, 2)}\n`,
+    };
+  }
+  if (uri === PROFILE_RESOURCE_URI) {
+    return {
+      uri,
+      mimeType: "application/json",
+      text: `${JSON.stringify(publicConfiguration(config), null, 2)}\n`,
+    };
+  }
+  return null;
+}
+
 export function inspectServer(config) {
   return {
     server: SERVER_INFO,
     supportedProtocolVersions: [MODERN_PROTOCOL_VERSION, ...LEGACY_PROTOCOL_VERSIONS],
-    instructions: SERVER_INSTRUCTIONS,
+    instructions: buildServerInstructions(config),
     tools: buildTools(config),
-    resources: [
-      {
-        uri: PROFILE_RESOURCE_URI,
-        name: "Resolved Cyberdeck profiles",
-        mimeType: "application/json",
-      },
-    ],
+    resources: listedResources().map(({ uri, name, mimeType }) => ({ uri, name, mimeType })),
+    catalog: publicCatalog(config),
     configuration: publicConfiguration(config),
   };
 }
@@ -141,14 +184,14 @@ export function createServer(config, { input = process.stdin, output = process.s
           resultType: "complete",
           supportedVersions: [MODERN_PROTOCOL_VERSION],
           capabilities: capabilities(),
-          instructions: SERVER_INSTRUCTIONS,
+          instructions: buildServerInstructions(config),
         };
       case "initialize":
         return {
           protocolVersion: legacyProtocolVersion(params.protocolVersion),
           capabilities: capabilities(),
           serverInfo: SERVER_INFO,
-          instructions: SERVER_INSTRUCTIONS,
+          instructions: buildServerInstructions(config),
         };
       case "ping":
         return {};
@@ -191,33 +234,20 @@ export function createServer(config, { input = process.stdin, output = process.s
           resultType: "complete",
           ttlMs: 60000,
           cacheScope: "private",
-          resources: [
-            {
-              uri: PROFILE_RESOURCE_URI,
-              name: "Resolved Cyberdeck profiles",
-              title: "Cyberdeck profile policy",
-              description:
-                "Resolved model patterns, Pi tool allowlists, path roots, limits, and security boundary.",
-              mimeType: "application/json",
-            },
-          ],
+          resources: listedResources(),
         };
-      case "resources/read":
-        if (params.uri !== PROFILE_RESOURCE_URI) {
+      case "resources/read": {
+        const resource = readResource(params.uri, config);
+        if (!resource) {
           throw new RpcError(-32602, `Unknown resource URI: ${String(params.uri)}`);
         }
         return {
           resultType: "complete",
           ttlMs: 60000,
           cacheScope: "private",
-          contents: [
-            {
-              uri: PROFILE_RESOURCE_URI,
-              mimeType: "application/json",
-              text: `${JSON.stringify(publicConfiguration(config), null, 2)}\n`,
-            },
-          ],
+          contents: [resource],
         };
+      }
       default:
         throw new RpcError(-32601, `Method not found: ${message.method}`);
     }
