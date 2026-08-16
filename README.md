@@ -114,22 +114,31 @@ destructive behavior accurately. Temperament stays in `role`.
 
 ## Install
 
-From a checkout:
+One command, no checkout:
 
 ```sh
-bash install.sh --dry-run
-bash install.sh
+curl -fsSL https://raw.githubusercontent.com/cmacdev/cyberdeck/master/install.sh | bash
 ```
 
-Or without a checkout, on a machine whose `gh` is authenticated (the repo is
-private, so anonymous `curl` cannot fetch it):
+While the repo is private that returns 404; use an authenticated `gh`
+instead:
 
 ```sh
 gh api repos/cmacdev/cyberdeck/contents/install.sh -H "Accept: application/vnd.github.raw" | bash
 ```
 
-Remote mode clones into `~/.cyberdeck/app` and updates it on re-runs;
-`CYBERDECK_REPO_URL` overrides the source.
+Either form clones into `~/.cyberdeck/app`, updates it on re-runs, and
+registers that fixed path; `CYBERDECK_REPO_URL` overrides the source. Append
+`-s -- --dry-run` to `bash` to print the plan without changing anything.
+Agents installing on someone's behalf should use this form rather than a
+checkout, and hand the API-key prompt to the user (see the table below).
+
+For development, from a checkout (registers the checkout itself):
+
+```sh
+bash install.sh --dry-run
+bash install.sh
+```
 
 The installer is idempotent, never uses sudo, and never touches an existing
 Pi (it warns when the found version differs from the tested one; `--pin-pi`
@@ -148,12 +157,13 @@ the same command — the installer is idempotent, and it never uses sudo.
 
 | Message | Fix |
 | --- | --- |
+| `curl: (22) The requested URL returned error: 404` | The repo is private (or the URL is wrong): use the `gh api` form above with an authenticated `gh`. |
 | `Node.js >= 20 is required` | Install or upgrade Node (e.g. `brew install node`) so `node` on `PATH` is 20 or newer. |
 | `npm's global directory … is not writable by <user>` | `npm config set prefix ~/.npm-global && export PATH="$HOME/.npm-global/bin:$PATH"`, and put the `PATH` line in your shell profile (`~/.zshrc`, `~/.bashrc`) so the MCP clients find `pi`. Do not sudo. |
 | `ACTION REQUIRED: add <dir> to PATH` (not a stop) | Pi was installed into npm's global `bin`, which is not on your `PATH`. Add it to your shell profile; the MCP clients start `pi` from that `PATH`. |
 | `git is required` | Install git (`xcode-select --install` or `brew install git`). |
 | `cannot read <repo> without a password prompt` | The repo is private. `gh auth login`, then `gh auth setup-git` (or store a GitHub credential in your keychain), and re-run. |
-| `no terminal available for the API key prompt` | Run from an interactive terminal (the prompt reads `/dev/tty`), or export `OPENROUTER_API_KEY` in the environment the MCP clients start with — the installer then leaves credentials to that variable. |
+| `no terminal available for the API key prompt` | Run the same command in an interactive terminal (the prompt reads `/dev/tty`), or export `OPENROUTER_API_KEY` in the environment the MCP clients start with — the installer then leaves credentials to that variable. Agents: hand this step to the user; do not ask for or handle the key. |
 | `empty API key` / `Pi does not report OpenRouter credentials as ready` | Nothing was stored, or the key was rejected. Check with `pi auth check --provider openrouter`; re-run to be prompted again. |
 | `verification failed: the resolved configuration does not load` | `node <app>/bin/cyberdeck-mcp.mjs --config <app>/cyberdeck.config.json --inspect` prints the configuration error (`<app>` is the checkout or `~/.cyberdeck/app`). Fix `cyberdeck.config.json` and re-run. |
 | `pi <found> found; left untouched (tested with <pinned>…)` (not a stop) | A different Pi version stays as it is. `--pin-pi` installs the tested version, up or down. |
@@ -164,6 +174,22 @@ shows the registration. If a `research` call returns `status: "failed"` with
 `error` containing `spawn pi ENOENT`, `pi` is not on the `PATH` the client
 starts with — add npm's global `bin` to your shell profile and restart the
 client.
+
+### Uninstall
+
+```sh
+claude mcp remove --scope user cyberdeck
+rm -rf ~/.cyberdeck
+```
+
+Then delete the `[mcp_servers.cyberdeck]` block from `~/.codex/config.toml`
+(likewise `mcp.cyberdeck` in `~/.config/opencode/opencode.json` or the block
+in `~/.grok/config.toml` if present) and the two `mcp__cyberdeck__*` rules
+from `~/.claude/settings.json`. Pi and its auth store are left as they were;
+`npm uninstall -g @earendil-works/pi-coding-agent` and `rm -rf ~/.pi` remove
+them if you want that too. Run artifacts live in `.cyberdeck/runs` next to
+the config file, so the one-command install's artifacts go with
+`~/.cyberdeck`; a checkout install keeps them in the checkout (gitignored).
 
 ## Configure
 
