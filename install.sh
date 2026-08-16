@@ -38,6 +38,7 @@ run() {
 }
 die() {
   echo "cyberdeck-install: $1" >&2
+  echo "cyberdeck-install: see README.md, section 'If the installer stops'." >&2
   exit 1
 }
 
@@ -48,6 +49,11 @@ if [ -n "$SCRIPT_DIR" ] && [ -f "$SCRIPT_DIR/bin/cyberdeck-mcp.mjs" ]; then
   note "using checkout at $APP_DIR"
 else
   APP_DIR="$CYBERDECK_HOME/app"
+  command -v git >/dev/null 2>&1 || die "git is required to fetch cyberdeck (e.g. 'xcode-select --install' or 'brew install git')."
+  # Piped installs cannot answer a credential prompt; fail fast with the fix instead.
+  export GIT_TERMINAL_PROMPT=0
+  git ls-remote --exit-code "$CYBERDECK_REPO_URL" HEAD >/dev/null 2>&1 \
+    || die "cannot read $CYBERDECK_REPO_URL without a password prompt. The repo is private: run 'gh auth login' then 'gh auth setup-git' (or store a GitHub credential in your keychain) and re-run."
   if [ -d "$APP_DIR/.git" ]; then
     run git -C "$APP_DIR" pull --ff-only --quiet
     if [ "$DRY_RUN" -eq 1 ]; then
@@ -74,13 +80,37 @@ node -e 'process.exit(Number(process.versions.node.split(".")[0]) >= 20 ? 0 : 1)
 note "node $(node --version) ok"
 
 # --- Pi: never touch an existing installation -----------------------------------
+npm_global_writable() {
+  # npm -g writes the global node_modules and bin. A fresh prefix may not exist
+  # yet, so test the nearest existing ancestor of each.
+  local target
+  for target in "$(npm root -g)" "$(npm prefix -g)/bin"; do
+    while [ ! -e "$target" ]; do target="$(dirname "$target")"; done
+    [ -w "$target" ] || return 1
+  done
+}
+install_pi() {
+  command -v npm >/dev/null 2>&1 || die "npm is required to install Pi; it ships with Node."
+  npm_global_writable || die "npm's global directory ($(npm prefix -g)) is not writable by $(id -un), and this installer never uses sudo (typical when Node was installed from another user account). Give npm a user-level prefix, then re-run:
+  npm config set prefix ~/.npm-global && export PATH=\"\$HOME/.npm-global/bin:\$PATH\"
+Put that PATH line in your shell profile too, so the MCP clients can find pi."
+  run npm install -g "$PI_PACKAGE@$PINNED_PI"
+  NPM_BIN="$(npm prefix -g)/bin"
+  case ":$PATH:" in
+    *":$NPM_BIN:"*) ;;
+    *)
+      export PATH="$NPM_BIN:$PATH"
+      note "ACTION REQUIRED: add $NPM_BIN to PATH in your shell profile; the MCP clients must find pi there"
+      ;;
+  esac
+}
 if command -v pi >/dev/null 2>&1; then
   FOUND_PI="$(pi --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true)"
   FOUND_PI="${FOUND_PI:-unknown}"
   if [ "$FOUND_PI" = "$PINNED_PI" ]; then
     note "pi $FOUND_PI found (tested version); left untouched"
   elif [ "$PIN_PI" -eq 1 ]; then
-    run npm install -g "$PI_PACKAGE@$PINNED_PI"
+    install_pi
     if [ "$DRY_RUN" -eq 1 ]; then
       note "pi would be set to $PINNED_PI (explicit --pin-pi)"
     else
@@ -90,8 +120,7 @@ if command -v pi >/dev/null 2>&1; then
     note "pi $FOUND_PI found; left untouched (tested with $PINNED_PI; pass --pin-pi to install that version)"
   fi
 else
-  command -v npm >/dev/null 2>&1 || die "npm is required to install Pi."
-  run npm install -g "$PI_PACKAGE@$PINNED_PI"
+  install_pi
   if [ "$DRY_RUN" -eq 1 ]; then
     note "would install pi $PINNED_PI"
   else

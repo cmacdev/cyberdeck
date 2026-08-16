@@ -106,6 +106,11 @@ destructive behavior accurately. Temperament stays in `role`.
   `pi.command`/`pi.arguments` configuration.
 - OpenRouter credentials available through `OPENROUTER_API_KEY` or Pi's
   existing authentication store.
+- Only when Pi is absent: npm's global directory must be writable by the
+  user running the installer (`npm install -g`, never sudo). It usually is
+  not when Node was installed from another user account — for example a
+  work profile and a personal profile on one Mac. The installer stops and
+  prints the fix; see below.
 
 ## Install
 
@@ -135,6 +140,30 @@ configuration. It then registers the server with Claude Code and Codex when
 those CLIs are present, and with OpenCode or Grok Build when their config
 directory or CLI is present. It verifies that the resolved configuration
 loads.
+
+### If the installer stops
+
+Every stop prints its cause; this table gives the fix. Apply it and re-run
+the same command — the installer is idempotent, and it never uses sudo.
+
+| Message | Fix |
+| --- | --- |
+| `Node.js >= 20 is required` | Install or upgrade Node (e.g. `brew install node`) so `node` on `PATH` is 20 or newer. |
+| `npm's global directory … is not writable by <user>` | `npm config set prefix ~/.npm-global && export PATH="$HOME/.npm-global/bin:$PATH"`, and put the `PATH` line in your shell profile (`~/.zshrc`, `~/.bashrc`) so the MCP clients find `pi`. Do not sudo. |
+| `ACTION REQUIRED: add <dir> to PATH` (not a stop) | Pi was installed into npm's global `bin`, which is not on your `PATH`. Add it to your shell profile; the MCP clients start `pi` from that `PATH`. |
+| `git is required` | Install git (`xcode-select --install` or `brew install git`). |
+| `cannot read <repo> without a password prompt` | The repo is private. `gh auth login`, then `gh auth setup-git` (or store a GitHub credential in your keychain), and re-run. |
+| `no terminal available for the API key prompt` | Run from an interactive terminal (the prompt reads `/dev/tty`), or export `OPENROUTER_API_KEY` in the environment the MCP clients start with — the installer then leaves credentials to that variable. |
+| `empty API key` / `Pi does not report OpenRouter credentials as ready` | Nothing was stored, or the key was rejected. Check with `pi auth check --provider openrouter`; re-run to be prompted again. |
+| `verification failed: the resolved configuration does not load` | `node <app>/bin/cyberdeck-mcp.mjs --config <app>/cyberdeck.config.json --inspect` prints the configuration error (`<app>` is the checkout or `~/.cyberdeck/app`). Fix `cyberdeck.config.json` and re-run. |
+| `pi <found> found; left untouched (tested with <pinned>…)` (not a stop) | A different Pi version stays as it is. `--pin-pi` installs the tested version, up or down. |
+
+After a successful run, restart the client. If the tools do not appear:
+`claude mcp get cyberdeck` (Claude Code) or `~/.codex/config.toml` (Codex)
+shows the registration. If a `research` call returns `status: "failed"` with
+`error` containing `spawn pi ENOENT`, `pi` is not on the `PATH` the client
+starts with — add npm's global `bin` to your shell profile and restart the
+client.
 
 ## Configure
 
