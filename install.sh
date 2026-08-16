@@ -50,11 +50,19 @@ else
   APP_DIR="$CYBERDECK_HOME/app"
   if [ -d "$APP_DIR/.git" ]; then
     run git -C "$APP_DIR" pull --ff-only --quiet
-    note "updated $APP_DIR from $CYBERDECK_REPO_URL"
+    if [ "$DRY_RUN" -eq 1 ]; then
+      note "would update $APP_DIR from $CYBERDECK_REPO_URL"
+    else
+      note "updated $APP_DIR from $CYBERDECK_REPO_URL"
+    fi
   else
     run mkdir -p "$CYBERDECK_HOME"
     run git clone --depth 1 --quiet "$CYBERDECK_REPO_URL" "$APP_DIR"
-    note "cloned $CYBERDECK_REPO_URL to $APP_DIR"
+    if [ "$DRY_RUN" -eq 1 ]; then
+      note "would clone $CYBERDECK_REPO_URL to $APP_DIR"
+    else
+      note "cloned $CYBERDECK_REPO_URL to $APP_DIR"
+    fi
   fi
 fi
 CONFIG_PATH="$APP_DIR/cyberdeck.config.json"
