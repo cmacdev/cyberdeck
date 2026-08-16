@@ -157,7 +157,7 @@ the same command — the installer is idempotent, and it never uses sudo.
 
 | Message | Fix |
 | --- | --- |
-| `curl: (22) The requested URL returned error: 404` | The repo is private (or the URL is wrong): use the `gh api` form above with an authenticated `gh`. |
+| `curl: (22)` or `(56) The requested URL returned error: 404` | The repo is private (or the URL is wrong): use the `gh api` form above with an authenticated `gh`. |
 | `Node.js >= 20 is required` | Install or upgrade Node (e.g. `brew install node`) so `node` on `PATH` is 20 or newer. |
 | `npm's global directory … is not writable by <user>` | `npm config set prefix ~/.npm-global && export PATH="$HOME/.npm-global/bin:$PATH"`, and put the `PATH` line in your shell profile (`~/.zshrc`, `~/.bashrc`) so the MCP clients find `pi`. Do not sudo. |
 | `ACTION REQUIRED: add <dir> to PATH` (not a stop) | Pi was installed into npm's global `bin`, which is not on your `PATH`. Add it to your shell profile; the MCP clients start `pi` from that `PATH`. |
