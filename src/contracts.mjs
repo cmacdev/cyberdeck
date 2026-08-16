@@ -11,6 +11,12 @@ export const LEGACY_PROTOCOL_VERSIONS = Object.freeze([
 export const PROFILE_RESOURCE_URI = "cyberdeck://profiles";
 export const CATALOG_RESOURCE_URI = "cyberdeck://catalog";
 
+// Fixed input bounds shared by the JSON Schema and the validator.
+export const MAX_PATH_CHARACTERS = 4096;
+export const MAX_MODEL_CHARACTERS = 200;
+export const MAX_CONSTRAINTS = 20;
+export const MAX_CONSTRAINT_CHARACTERS = 500;
+
 function roleLines(profile) {
   return Object.entries(profile.roles).map(
     ([name, role]) => `${name} (${role.model}): ${role.when}`,
@@ -38,12 +44,12 @@ function allowedModels(profile) {
 }
 
 function modelProperty(profile) {
-  const exactModels = profile.modelPatterns.filter((pattern) => !pattern.includes("*"));
   const hasWildcard = profile.modelPatterns.some((pattern) => pattern.includes("*"));
   const listed = allowedModels(profile);
   return {
     type: "string",
     minLength: 1,
+    maxLength: MAX_MODEL_CHARACTERS,
     ...(hasWildcard || listed.length === 0 ? {} : { enum: listed }),
     description:
       "Optional OpenRouter model ID. Omit to use the selected role's model. Must match this profile's modelPatterns.",
@@ -59,17 +65,12 @@ function roleProperty(profile) {
   };
 }
 
+// The enum shows the profile ceiling; the selected role's own ceiling is
+// enforced server-side and stated in the description.
 function thinkingProperty(profile) {
-  const ceiling = Object.values(profile.roles).reduce(
-    (highest, role) =>
-      THINKING_LEVELS.indexOf(role.maxThinking) > THINKING_LEVELS.indexOf(highest)
-        ? role.maxThinking
-        : highest,
-    profile.maxThinking,
-  );
   return {
     type: "string",
-    enum: THINKING_LEVELS.slice(0, THINKING_LEVELS.indexOf(ceiling) + 1),
+    enum: THINKING_LEVELS.slice(0, THINKING_LEVELS.indexOf(profile.maxThinking) + 1),
     description: "Pi reasoning level, capped by the selected role. Omit to use the role default.",
   };
 }
@@ -92,6 +93,7 @@ function inputSchema(config, profileName) {
       working_directory: {
         type: "string",
         minLength: 1,
+        maxLength: MAX_PATH_CHARACTERS,
         description: "Existing absolute directory inside a configured workspace root.",
       },
       role: roleProperty(profile),
@@ -101,14 +103,14 @@ function inputSchema(config, profileName) {
         type: "array",
         maxItems: limits.maxContextFiles,
         uniqueItems: true,
-        items: { type: "string", minLength: 1 },
+        items: { type: "string", minLength: 1, maxLength: MAX_PATH_CHARACTERS },
         description: "Optional absolute files inside configured roots, passed to Pi as @file inputs.",
       },
       constraints: {
         type: "array",
-        maxItems: 20,
+        maxItems: MAX_CONSTRAINTS,
         uniqueItems: true,
-        items: { type: "string", minLength: 1, maxLength: 500 },
+        items: { type: "string", minLength: 1, maxLength: MAX_CONSTRAINT_CHARACTERS },
         description: "Explicit task-specific boundaries forwarded to the delegated agent.",
       },
       timeout_seconds: {
@@ -116,6 +118,7 @@ function inputSchema(config, profileName) {
         minimum: 1,
         maximum: limits.maxTimeoutSeconds,
         default: limits.defaultTimeoutSeconds,
+        description: "Wall-clock limit for the Pi run.",
       },
       return_characters: {
         type: "integer",
@@ -162,7 +165,10 @@ export const OUTPUT_SCHEMA = Object.freeze({
     tools: { type: "array", items: { type: "string" } },
     exit_code: { type: ["integer", "null"] },
     duration_ms: { type: "integer", minimum: 0 },
-    final_output: { type: "string" },
+    final_output: {
+      type: "string",
+      description: "Assistant's final text; empty when none. Never stderr.",
+    },
     output_truncated: { type: "boolean" },
     usage: {
       type: "object",

@@ -16,7 +16,7 @@ function usage() {
 }
 
 function parseArguments(argv) {
-  let configPath = process.env.CYBERDECK_CONFIG || path.join(packageDirectory, "cyberdeck.config.json");
+  let configPath = path.join(packageDirectory, "cyberdeck.config.json");
   let inspect = false;
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
@@ -45,7 +45,12 @@ try {
     if (options.inspect) {
       process.stdout.write(`${JSON.stringify(inspectServer(config), null, 2)}\n`);
     } else {
-      createServer(config);
+      const server = createServer(config);
+      // Stop reading and terminate every delegated Pi run so a client that
+      // kills this process cannot leave children writing or spending.
+      for (const signal of ["SIGTERM", "SIGINT", "SIGHUP"]) {
+        process.on(signal, () => server.close());
+      }
     }
   }
 } catch (error) {

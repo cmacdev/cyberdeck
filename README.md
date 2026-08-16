@@ -81,17 +81,19 @@ This package avoids the usual sources of MCP context growth:
 
 - Only two action schemas are exposed. Roles are an enum plus a short
   description, not extra tools. The current serialized tool catalog is about
-  8 KB of JSON.
+  8 KB of JSON (the test suite fails above 10 KB).
 - There is no status, logging, or generic shell tool exposed to the client.
 - The role table lives at on-demand `cyberdeck://catalog` and in
   `npm run inspect`; it is not repeated as a third tool.
 - Pi runs are stateless (`--no-session`), so prior delegated conversations
   are not replayed.
-- Only a capped final answer is returned. The captured JSONL event stream
-  (up to the artifact byte cap), stderr, effective request, and result
-  metadata go to local artifacts.
+- Only a capped final answer is returned. The captured JSONL event stream and
+  stderr (together capped at `limits.maxArtifactBytes`), effective request,
+  and result metadata go to local artifacts.
 - The MCP text result is a short summary; the typed answer is in
-  `structuredContent`, avoiding a second full copy of the model output.
+  `structuredContent`. This deliberately skips the spec's SHOULD of repeating
+  the serialized JSON in the text block, avoiding a second full copy of the
+  model output.
 
 The tradeoff is intentional: separate research and implementation tools cost
 one extra compact schema, but let the client distinguish read-only and
@@ -100,7 +102,7 @@ destructive behavior accurately. Temperament stays in `role`.
 ## Requirements
 
 - Node.js 20 or newer. There are no npm dependencies.
-- Pi available on `PATH` (tested against Pi 0.84.1), or a custom
+- Pi available on `PATH` (tested against Pi 0.84.2), or a custom
   `pi.command`/`pi.arguments` configuration.
 - OpenRouter credentials available through `OPENROUTER_API_KEY` or Pi's
   existing authentication store.
@@ -125,9 +127,9 @@ Remote mode clones into `~/.cyberdeck/app` and updates it on re-runs;
 `CYBERDECK_REPO_URL` overrides the source.
 
 The installer is idempotent, never uses sudo, and never touches an existing
-Pi (it warns when the found version differs from the tested one;
-`--upgrade-pi` opts in). When Pi is absent it installs the pinned version via
-npm. If no OpenRouter credentials exist it prompts once with hidden input and
+Pi (it warns when the found version differs from the tested one; `--pin-pi`
+installs the tested version, up or down). When Pi is absent it installs the
+pinned version via npm. If no OpenRouter credentials exist it prompts once with hidden input and
 stores the key in Pi's own auth store — never in cyberdeck files or MCP
 configuration. It then registers the server with Claude Code and Codex when
 those CLIs are present, and with OpenCode or Grok Build when their config
@@ -306,10 +308,18 @@ profile's `defaultRole`; `model` defaults to that role's bound ID. Unknown
 fields are rejected. Every optional value has a server-side ceiling reflected
 in the MCP JSON Schema.
 
-Successful structured results include the status, run ID, role, actual model,
-reasoning level, Pi tool policy, capped final output, usage, and artifact
-paths. Validation failures are typed `rejected` tool results, so the caller
-can correct them without guessing.
+Structured results include `status` (`succeeded`, `failed`, `timed_out`,
+`output_limit`, `rejected`; `cancelled` appears only in the artifact, see
+below), run ID, role, actual model, reasoning level, Pi tool policy,
+`final_output`, usage, and artifact paths. `final_output` is
+always the assistant's final text, capped at `return_characters`, or empty
+when there was none; on failure the diagnostic is in `error` and the full
+stderr is an artifact. Validation failures are typed `rejected` tool results,
+so the caller can correct them without guessing.
+
+A request cancelled by the client (`notifications/cancelled`) terminates Pi
+and, per the MCP cancellation rules, receives no response; its
+`result.json` artifact records `status: "cancelled"` and the client's reason.
 
 ## Artifacts
 
@@ -338,11 +348,19 @@ OpenRouter account/key spending limits as the hard cost boundary.
 npm test
 ```
 
-The test launches Cyberdeck over stdio and uses a fake Pi binary. It verifies
-current `server/discover`, legacy `initialize`, tool/resource listing,
-schemas, annotations, default and named roles, model and path rejection,
-profile-specific tool flags, environment handling, event parsing, usage, and
-artifacts. It does not access the network or OpenRouter.
+The tests launch Cyberdeck over stdio against the fake Pi in `fixtures/` and
+never touch the network. `test/server.test.mjs` pins the wire contract
+(discovery, legacy initialize, schemas, annotations, resources, error codes),
+the enforcement paths (roles, models, roots, limits, timeout, cancellation,
+output cap, spawn failure, concurrency), result semantics, and shutdown.
+`test/config.test.mjs` pins startup refusals, the CLI, and the catalog size
+tripwire.
+
+To check the real Pi path once (costs one cheap OpenRouter call): start the
+server from this directory, call `research` with role `mechanical`,
+`thinking: "off"`, and task `Reply with exactly the word READY and nothing
+else.`; expect `ok: true`, `final_output` containing `READY`, and non-zero
+`usage`.
 
 ## Protocol and design notes
 
@@ -350,8 +368,16 @@ Cyberdeck uses newline-delimited JSON-RPC over stdio with no runtime
 dependencies. It implements the current MCP `2026-07-28` stateless
 discovery/result shape and legacy initialization versions used by current
 Claude Code, Codex, OpenCode, and Grok Build clients (Claude Code negotiates
-`2025-06-18`). The wire implementation is intentionally small enough to
-inspect in `src/server.mjs`.
+`2025-06-18`). A request that carries a modern
+`_meta["io.modelcontextprotocol/protocolVersion"]` is checked against the
+supported version (unsupported → `-32022` with the supported list, so the
+client can retry); a request without one is served under legacy semantics.
+Client capabilities are not consumed and so not required. Lines over 16
+million characters are refused. On stdin EOF or
+`SIGTERM`/`SIGINT`/`SIGHUP` the server stops reading and terminates every
+running Pi (SIGTERM, then SIGKILL after 2 s) before exiting, so a killed
+client cannot leave delegated runs writing or spending. The wire
+implementation is intentionally small enough to inspect in `src/server.mjs`.
 
 OpenAI's current MCP guidance calls for explicit input/output schemas,
 accurate safety annotations, concise structured results, and server-side

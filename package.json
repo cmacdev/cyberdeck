@@ -9,7 +9,7 @@
   },
   "scripts": {
     "inspect": "node ./bin/cyberdeck-mcp.mjs --inspect",
-    "test": "node --test"
+    "test": "node --test test/*.test.mjs"
   },
   "engines": {
     "node": ">=20"

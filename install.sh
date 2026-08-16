@@ -1,21 +1,21 @@
 #!/usr/bin/env bash
-# Cyberdeck installer. Idempotent, no sudo, never touches an existing Pi.
-# Usage: bash install.sh [--dry-run] [--upgrade-pi]
+# Cyberdeck installer. Idempotent, no sudo, never touches an existing Pi unless --pin-pi.
+# Usage: bash install.sh [--dry-run] [--pin-pi]
 # Remote mode (piped): clones CYBERDECK_REPO_URL (default: the private cmacdev/cyberdeck
 # repo, so the machine needs authenticated git/gh for github.com).
 set -euo pipefail
 
-PINNED_PI="0.84.1"
+PINNED_PI="0.84.2"
 PI_PACKAGE="@earendil-works/pi-coding-agent"
 CYBERDECK_HOME="${CYBERDECK_HOME:-$HOME/.cyberdeck}"
 CYBERDECK_REPO_URL="${CYBERDECK_REPO_URL:-https://github.com/cmacdev/cyberdeck.git}"
 
 DRY_RUN=0
-UPGRADE_PI=0
+PIN_PI=0
 for argument in "$@"; do
   case "$argument" in
     --dry-run) DRY_RUN=1 ;;
-    --upgrade-pi) UPGRADE_PI=1 ;;
+    --pin-pi) PIN_PI=1 ;;
     --help|-h)
       sed -n '2,5p' "$0"
       exit 0
@@ -67,18 +67,19 @@ note "node $(node --version) ok"
 
 # --- Pi: never touch an existing installation -----------------------------------
 if command -v pi >/dev/null 2>&1; then
-  FOUND_PI="$(pi --version 2>/dev/null | head -1 || echo unknown)"
+  FOUND_PI="$(pi --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true)"
+  FOUND_PI="${FOUND_PI:-unknown}"
   if [ "$FOUND_PI" = "$PINNED_PI" ]; then
     note "pi $FOUND_PI found (tested version); left untouched"
-  elif [ "$UPGRADE_PI" -eq 1 ]; then
+  elif [ "$PIN_PI" -eq 1 ]; then
     run npm install -g "$PI_PACKAGE@$PINNED_PI"
     if [ "$DRY_RUN" -eq 1 ]; then
-      note "pi would be upgraded to $PINNED_PI (explicit --upgrade-pi)"
+      note "pi would be set to $PINNED_PI (explicit --pin-pi)"
     else
-      note "pi upgraded to $PINNED_PI (explicit --upgrade-pi)"
+      note "pi set to $PINNED_PI (explicit --pin-pi)"
     fi
   else
-    note "pi $FOUND_PI found; left untouched (tested with $PINNED_PI; pass --upgrade-pi to change)"
+    note "pi $FOUND_PI found; left untouched (tested with $PINNED_PI; pass --pin-pi to install that version)"
   fi
 else
   command -v npm >/dev/null 2>&1 || die "npm is required to install Pi."
@@ -196,9 +197,16 @@ if [ -f "$HOME/.config/opencode/opencode.json" ]; then
 elif command -v opencode >/dev/null 2>&1 || [ -d "$HOME/.config/opencode" ]; then
   OPENCODE_CONFIG="$HOME/.config/opencode/opencode.json"
 fi
+opencode_registered() {
+  [ -f "$OPENCODE_CONFIG" ] && node -e '
+    const { readFileSync } = require("node:fs");
+    const settings = JSON.parse(readFileSync(process.argv[1], "utf8"));
+    process.exit(settings?.mcp?.cyberdeck ? 0 : 1);
+  ' "$OPENCODE_CONFIG" 2>/dev/null
+}
 if [ -n "$OPENCODE_CONFIG" ]; then
-  if [ -f "$OPENCODE_CONFIG" ] && grep -q '"cyberdeck"' "$OPENCODE_CONFIG"; then
-    note "OpenCode: cyberdeck already mentioned in $OPENCODE_CONFIG; left untouched"
+  if opencode_registered; then
+    note "OpenCode: cyberdeck already registered in $OPENCODE_CONFIG; left untouched"
   elif [ "$DRY_RUN" -eq 1 ]; then
     note "OpenCode: would register cyberdeck in $OPENCODE_CONFIG"
   else

@@ -14,6 +14,8 @@ export const THINKING_LEVELS = [
 
 const PROFILE_NAMES = ["research", "implementation"];
 const MUTATING_BUILT_INS = new Set(["bash", "edit", "write"]);
+// One day; also keeps timeout_seconds * 1000 far below the setTimeout limit.
+export const MAX_TIMEOUT_SECONDS = 86400;
 const TOOL_NAME = /^[A-Za-z0-9_.:-]+$/;
 const ROLE_NAME = /^[a-z][a-z0-9_]{0,31}$/;
 
@@ -360,6 +362,9 @@ export async function loadConfig(configPath) {
     ),
   };
   if (limits.maxConcurrentRuns > 32) fail("limits.maxConcurrentRuns cannot exceed 32.");
+  if (limits.maxTimeoutSeconds > MAX_TIMEOUT_SECONDS) {
+    fail(`limits.maxTimeoutSeconds cannot exceed ${MAX_TIMEOUT_SECONDS}.`);
+  }
   if (limits.defaultTimeoutSeconds > limits.maxTimeoutSeconds) {
     fail("limits.defaultTimeoutSeconds cannot exceed maxTimeoutSeconds.");
   }

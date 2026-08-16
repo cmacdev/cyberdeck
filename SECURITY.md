@@ -7,9 +7,10 @@ It enforces the following before Pi starts:
 - The selected role must exist on the chosen profile. The resolved model must match that profile's `modelPatterns`.
 - The working directory and attached context files must resolve inside a configured workspace root.
 - The research profile cannot contain Pi's built-in `bash`, `edit`, or `write` tools.
-- Concurrent runs, thinking, timeout, task size, attachment count, returned text, and artifact size are capped.
+- Concurrent runs, thinking, timeout, task size, attachment count, path lengths, returned text, artifact size, and stdio line length are capped.
 - Pi runs without a saved conversation (`--no-session`) and without implicitly trusting project-local Pi extensions (`--no-approve`) by default.
 - OpenRouter credentials are inherited from the process environment or Pi's own auth store. They are not MCP arguments or run-record fields.
+- When the client closes stdin or the process receives `SIGTERM`/`SIGINT`/`SIGHUP`, every running Pi is terminated (SIGTERM, then SIGKILL) before the server exits; a cancelled or killed call cannot leave a Pi child writing or spending.
 
 It does **not** enforce these boundaries:
 

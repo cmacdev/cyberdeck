@@ -11,7 +11,13 @@ import {
   isWithinRoot,
   matchesModelPattern,
 } from "./config.mjs";
-import { emptyUsage } from "./contracts.mjs";
+import {
+  MAX_CONSTRAINTS,
+  MAX_CONSTRAINT_CHARACTERS,
+  MAX_MODEL_CHARACTERS,
+  MAX_PATH_CHARACTERS,
+  emptyUsage,
+} from "./contracts.mjs";
 
 const INPUT_KEYS = new Set([
   "task",
@@ -24,6 +30,7 @@ const INPUT_KEYS = new Set([
   "timeout_seconds",
   "return_characters",
 ]);
+const SIGKILL_GRACE_MS = 2000;
 
 export class InputError extends Error {
   constructor(message) {
@@ -128,7 +135,9 @@ async function validateInput(profileName, rawInput, config) {
     );
   }
   const model =
-    input.model === undefined ? role.model : requiredString(input.model, "model").trim();
+    input.model === undefined
+      ? role.model
+      : requiredString(input.model, "model", MAX_MODEL_CHARACTERS).trim();
   if (!matchesModelPattern(model, profile.modelPatterns)) {
     inputFail(
       `model ${JSON.stringify(model)} is not allowed by the ${profileName} profile; inspect cyberdeck://catalog.`,
@@ -145,8 +154,14 @@ async function validateInput(profileName, rawInput, config) {
     input.context_files,
     "context_files",
     config.limits.maxContextFiles,
+    MAX_PATH_CHARACTERS,
   );
-  const constraints = stringArray(input.constraints, "constraints", 20, 500);
+  const constraints = stringArray(
+    input.constraints,
+    "constraints",
+    MAX_CONSTRAINTS,
+    MAX_CONSTRAINT_CHARACTERS,
+  );
   return {
     task,
     role: roleName,
@@ -167,7 +182,7 @@ async function validateInput(profileName, rawInput, config) {
       config.limits.maxReturnCharacters,
     ),
     workingDirectory: await canonicalExistingDirectory(
-      requiredString(input.working_directory, "working_directory"),
+      requiredString(input.working_directory, "working_directory", MAX_PATH_CHARACTERS),
       config,
     ),
     contextFiles: await canonicalContextFiles(contextValues, config),
@@ -243,13 +258,6 @@ function truncateError(value, maximum = 1000) {
   return `${value.slice(0, maximum - suffix.length)}${suffix}`;
 }
 
-function streamCompletion(stream) {
-  stream.end();
-  return finished(stream).catch((error) => {
-    throw new Error(`Cannot finish artifact stream: ${error.message}`);
-  });
-}
-
 async function executePi({ args, environment, workingDirectory, paths, config, signal }) {
   const state = {
     finalOutput: "",
@@ -258,8 +266,14 @@ async function executePi({ args, environment, workingDirectory, paths, config, s
     stopReason: null,
     errorMessage: null,
   };
+  let artifactError = null;
+  const recordArtifactError = (error) => {
+    artifactError ??= error;
+  };
   const stdoutFile = createWriteStream(paths.events, { encoding: null, mode: 0o600 });
   const stderrFile = createWriteStream(paths.stderr, { encoding: null, mode: 0o600 });
+  stdoutFile.on("error", recordArtifactError);
+  stderrFile.on("error", recordArtifactError);
   const decoder = new StringDecoder("utf8");
   let lineBuffer = "";
   let stderrTail = "";
@@ -269,14 +283,15 @@ async function executePi({ args, environment, workingDirectory, paths, config, s
   let child;
   let forceKillTimer;
 
+  // Records a reason only when we actually signal a live child, so a late
+  // abort or timer cannot relabel a run that already finished on its own.
   const terminate = (reason) => {
-    if (terminationReason) return;
+    if (terminationReason || !child || child.exitCode !== null || child.signalCode !== null) return;
     terminationReason = reason;
-    if (!child || child.exitCode !== null || child.signalCode !== null) return;
     child.kill("SIGTERM");
     forceKillTimer = setTimeout(() => {
       if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
-    }, 2000);
+    }, SIGKILL_GRACE_MS);
     forceKillTimer.unref();
   };
 
@@ -299,21 +314,27 @@ async function executePi({ args, environment, workingDirectory, paths, config, s
     if (buffer.length > remaining) terminate("output_limit");
   };
 
-  try {
-    child = spawn(config.pi.command, [...config.pi.arguments, ...args], {
-      cwd: workingDirectory,
-      env: environment,
-      shell: false,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-  } catch (error) {
-    spawnError = error;
+  let exitCode = null;
+  if (signal?.aborted) {
+    terminationReason = "cancelled";
+  } else {
+    try {
+      child = spawn(config.pi.command, [...config.pi.arguments, ...args], {
+        cwd: workingDirectory,
+        env: environment,
+        shell: false,
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+    } catch (error) {
+      spawnError = error;
+    }
   }
 
-  let exitCode = null;
   if (child) {
     child.stdout.on("data", (chunk) => writeCapped(stdoutFile, chunk, true));
     child.stderr.on("data", (chunk) => writeCapped(stderrFile, chunk, false));
+    child.stdout.on("error", recordArtifactError);
+    child.stderr.on("error", recordArtifactError);
     child.on("error", (error) => {
       spawnError = error;
     });
@@ -324,23 +345,41 @@ async function executePi({ args, environment, workingDirectory, paths, config, s
     if (signal?.aborted) abort();
     else signal?.addEventListener("abort", abort, { once: true });
 
-    exitCode = await new Promise((resolve) => {
+    const closeCode = await new Promise((resolve) => {
       child.once("close", (code) => resolve(Number.isInteger(code) ? code : null));
     });
     clearTimeout(timeout);
     if (forceKillTimer) clearTimeout(forceKillTimer);
     signal?.removeEventListener("abort", abort);
+    // A child that never started reports the errno as its close code.
+    exitCode = child.pid === undefined ? null : closeCode;
   }
 
   lineBuffer += decoder.end();
   if (lineBuffer.trim()) updateFromEvent(state, lineBuffer);
-  await Promise.all([streamCompletion(stdoutFile), streamCompletion(stderrFile)]);
+  stdoutFile.end();
+  stderrFile.end();
+  await Promise.all([
+    finished(stdoutFile).catch(recordArtifactError),
+    finished(stderrFile).catch(recordArtifactError),
+  ]);
 
-  return { state, stderrTail: stderrTail.trim(), exitCode, terminationReason, spawnError };
+  return {
+    state,
+    stderrTail: stderrTail.trim(),
+    exitCode,
+    terminationReason,
+    spawnError,
+    artifactError,
+    cancelReason: typeof signal?.reason === "string" ? signal.reason : null,
+  };
 }
 
+// Resolves to null when the request was cancelled before anything started;
+// nothing is spawned or written in that case.
 export async function runPi(profileName, rawInput, config, signal) {
   const input = await validateInput(profileName, rawInput, config);
+  if (signal?.aborted) return null;
   const profile = config.profiles[profileName];
   const runId = makeRunId();
   const runDirectory = path.join(config.artifactDirectory, runId);
@@ -434,6 +473,7 @@ export async function runPi(profileName, rawInput, config, signal) {
   if (execution.terminationReason) status = execution.terminationReason;
   else if (
     execution.spawnError ||
+    execution.artifactError ||
     execution.exitCode !== 0 ||
     execution.state.stopReason === "error" ||
     execution.state.stopReason === "aborted"
@@ -441,18 +481,24 @@ export async function runPi(profileName, rawInput, config, signal) {
     status = "failed";
   }
   const ok = status === "succeeded";
-  const rawOutput =
-    execution.state.finalOutput ||
-    (ok ? "(Pi completed without assistant text.)" : execution.stderrTail);
-  const returned = truncateOutput(rawOutput, input.returnCharacters);
-  const rawError = ok
-    ? null
-    : execution.state.errorMessage ||
-      execution.spawnError?.message ||
-      execution.stderrTail ||
-      (execution.terminationReason
-        ? `Pi run ended because of ${execution.terminationReason}.`
-        : `Pi exited with code ${execution.exitCode}.`);
+  const returned = truncateOutput(execution.state.finalOutput, input.returnCharacters);
+  let rawError = null;
+  if (!ok) {
+    if (execution.terminationReason) {
+      rawError = `Pi run ended because of ${execution.terminationReason}.`;
+      if (execution.terminationReason === "cancelled" && execution.cancelReason) {
+        rawError += ` Reason: ${execution.cancelReason}`;
+      }
+    } else if (execution.artifactError) {
+      rawError = `Artifact write failed: ${execution.artifactError.message}`;
+    } else {
+      rawError =
+        execution.state.errorMessage ||
+        execution.spawnError?.message ||
+        execution.stderrTail ||
+        `Pi exited with code ${execution.exitCode}.`;
+    }
+  }
   const error = rawError === null ? null : truncateError(rawError);
 
   const result = {
@@ -472,9 +518,18 @@ export async function runPi(profileName, rawInput, config, signal) {
     artifacts: paths,
     error,
   };
-  await writeFile(paths.result, `${JSON.stringify(result, null, 2)}\n`, {
-    encoding: "utf8",
-    mode: 0o600,
-  });
+  try {
+    await writeFile(paths.result, `${JSON.stringify(result, null, 2)}\n`, {
+      encoding: "utf8",
+      mode: 0o600,
+    });
+  } catch (writeError) {
+    // The response is the last resort when the artifact directory has failed.
+    if (result.ok) {
+      result.ok = false;
+      result.status = "failed";
+      result.error = truncateError(`Artifact write failed: ${writeError.message}`);
+    }
+  }
   return result;
 }

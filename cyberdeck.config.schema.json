@@ -2,6 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://local.invalid/cyberdeck.config.schema.json",
   "title": "Cyberdeck MCP configuration",
+  "description": "Policy for the cyberdeck MCP server: roles, models, Pi tool allowlists, roots, and limits.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -17,27 +18,31 @@
       "type": "string"
     },
     "provider": {
-      "const": "openrouter"
+      "const": "openrouter",
+      "description": "Pi provider name. Only openrouter is supported."
     },
     "workspaceRoots": {
       "type": "array",
       "minItems": 1,
       "maxItems": 32,
       "uniqueItems": true,
+      "description": "Directories that working_directory and context_files must resolve inside. Root and home are refused.",
       "items": {
         "type": "string",
         "minLength": 1,
         "maxLength": 4096,
-        "description": "Absolute path, config-relative path, or @cwd."
+        "description": "Absolute path, config-relative path, or @cwd (the MCP server process's working directory)."
       }
     },
     "artifactDirectory": {
       "type": "string",
-      "minLength": 1
+      "minLength": 1,
+      "description": "Where per-run artifact directories are created (absolute or config-relative)."
     },
     "pi": {
       "type": "object",
       "additionalProperties": false,
+      "description": "How Pi is launched.",
       "required": [
         "command",
         "arguments",
@@ -48,11 +53,13 @@
       "properties": {
         "command": {
           "type": "string",
-          "minLength": 1
+          "minLength": 1,
+          "description": "Executable to run (default: pi on PATH)."
         },
         "arguments": {
           "type": "array",
           "maxItems": 32,
+          "description": "Arguments placed before cyberdeck's own Pi flags.",
           "items": {
             "type": "string",
             "maxLength": 4096
@@ -62,13 +69,16 @@
           "type": [
             "string",
             "null"
-          ]
+          ],
+          "description": "PI_CODING_AGENT_DIR for isolated Pi auth/settings, or null to reuse the user's Pi state."
         },
         "trustProjectFiles": {
-          "type": "boolean"
+          "type": "boolean",
+          "description": "true passes --approve (trust project-local Pi extensions); false passes --no-approve."
         },
         "loadContextFiles": {
-          "type": "boolean"
+          "type": "boolean",
+          "description": "false passes --no-context-files so Pi ignores AGENTS.md/CLAUDE.md."
         }
       }
     },
@@ -78,16 +88,19 @@
     "profiles": {
       "type": "object",
       "additionalProperties": false,
+      "description": "The two permission profiles behind the research and implement tools.",
       "required": [
         "research",
         "implementation"
       ],
       "properties": {
         "research": {
-          "$ref": "#/$defs/profile"
+          "$ref": "#/$defs/profile",
+          "description": "Read-only profile; its tools may not include bash, edit, or write."
         },
         "implementation": {
-          "$ref": "#/$defs/profile"
+          "$ref": "#/$defs/profile",
+          "description": "Write/shell-capable profile."
         }
       }
     }
@@ -102,11 +115,13 @@
         "high",
         "xhigh",
         "max"
-      ]
+      ],
+      "description": "Pi reasoning level."
     },
     "role": {
       "type": "object",
       "additionalProperties": false,
+      "description": "A preset agent the caller selects by name.",
       "required": [
         "model",
         "when"
@@ -115,22 +130,27 @@
         "model": {
           "type": "string",
           "minLength": 1,
-          "maxLength": 200
+          "maxLength": 200,
+          "description": "OpenRouter model ID; must match the profile's modelPatterns."
         },
         "when": {
           "type": "string",
           "minLength": 1,
-          "maxLength": 240
+          "maxLength": 240,
+          "description": "One line the calling agent sees: when to pick this role."
         },
         "defaultThinking": {
-          "$ref": "#/$defs/thinking"
+          "$ref": "#/$defs/thinking",
+          "description": "Used when the caller omits thinking. Defaults to the profile value."
         },
         "maxThinking": {
-          "$ref": "#/$defs/thinking"
+          "$ref": "#/$defs/thinking",
+          "description": "Ceiling for this role; may not exceed the profile's maxThinking."
         },
         "promptPreamble": {
           "type": "string",
-          "maxLength": 4000
+          "maxLength": 4000,
+          "description": "Overrides the profile promptPreamble for this role."
         }
       }
     },
@@ -152,6 +172,7 @@
           "minItems": 1,
           "maxItems": 32,
           "uniqueItems": true,
+          "description": "Allowlist for role models and caller model overrides; * is a wildcard.",
           "items": {
             "type": "string",
             "minLength": 1,
@@ -162,19 +183,23 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 32,
-          "pattern": "^[a-z][a-z0-9_]{0,31}$"
+          "pattern": "^[a-z][a-z0-9_]{0,31}$",
+          "description": "Role used when the caller omits role."
         },
         "defaultThinking": {
-          "$ref": "#/$defs/thinking"
+          "$ref": "#/$defs/thinking",
+          "description": "Fallback defaultThinking for roles that do not set one."
         },
         "maxThinking": {
-          "$ref": "#/$defs/thinking"
+          "$ref": "#/$defs/thinking",
+          "description": "Ceiling for every role in this profile."
         },
         "tools": {
           "type": "array",
           "minItems": 1,
           "maxItems": 64,
           "uniqueItems": true,
+          "description": "Exact Pi built-in or extension tool names passed as --tools.",
           "items": {
             "type": "string",
             "maxLength": 128,
@@ -183,12 +208,14 @@
         },
         "promptPreamble": {
           "type": "string",
-          "maxLength": 4000
+          "maxLength": 4000,
+          "description": "Appended to Pi's system prompt for every role unless the role overrides it."
         },
         "roles": {
           "type": "object",
           "minProperties": 1,
           "maxProperties": 16,
+          "description": "Named roles; keys are lowercase identifiers.",
           "additionalProperties": {
             "$ref": "#/$defs/role"
           },
@@ -201,6 +228,7 @@
     "limits": {
       "type": "object",
       "additionalProperties": false,
+      "description": "Server-side ceilings; the MCP input schema mirrors the caller-facing ones.",
       "required": [
         "maxConcurrentRuns",
         "defaultTimeoutSeconds",
@@ -215,36 +243,46 @@
         "maxConcurrentRuns": {
           "type": "integer",
           "minimum": 1,
-          "maximum": 32
+          "maximum": 32,
+          "description": "Pi runs allowed at once; further calls are rejected, not queued."
         },
         "defaultTimeoutSeconds": {
           "type": "integer",
-          "minimum": 1
+          "minimum": 1,
+          "maximum": 86400,
+          "description": "Wall-clock limit when the caller omits timeout_seconds."
         },
         "maxTimeoutSeconds": {
           "type": "integer",
-          "minimum": 1
+          "minimum": 1,
+          "maximum": 86400,
+          "description": "Ceiling for timeout_seconds."
         },
         "defaultReturnCharacters": {
           "type": "integer",
-          "minimum": 1
+          "minimum": 1,
+          "description": "final_output cap when the caller omits return_characters."
         },
         "maxReturnCharacters": {
           "type": "integer",
-          "minimum": 1
+          "minimum": 1,
+          "description": "Ceiling for return_characters."
         },
         "maxArtifactBytes": {
           "type": "integer",
-          "minimum": 1024
+          "minimum": 1024,
+          "description": "Combined stdout+stderr bytes captured per run; Pi is stopped beyond this."
         },
         "maxTaskCharacters": {
           "type": "integer",
-          "minimum": 1
+          "minimum": 1,
+          "description": "Ceiling for the task string."
         },
         "maxContextFiles": {
           "type": "integer",
           "minimum": 0,
-          "maximum": 100
+          "maximum": 100,
+          "description": "Ceiling for context_files entries."
         }
       }
     }
