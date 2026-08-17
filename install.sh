@@ -308,6 +308,34 @@ EOF
   note "Codex: appended cyberdeck block to $CODEX_CONFIG"
 fi
 
+# --- Install the deck skill -------------------------------------------------------
+# Keep the same portable Agent Skill in each client's documented default skill
+# directory. A marker allows Cyberdeck to update its own copy without replacing
+# an unrelated user-created skill that happens to use the same name.
+SOURCE_SKILL="$APP_DIR/skills/deck"
+install_deck_skill() {
+  local client="$1"
+  local target="$2"
+  local temporary="${target}.tmp.$$"
+  [ -f "$SOURCE_SKILL/SKILL.md" ] || die "the bundled deck skill is missing from $SOURCE_SKILL. Re-run after restoring the Cyberdeck checkout."
+  if [ -e "$target" ] && [ ! -f "$target/.cyberdeck-managed" ]; then
+    die "cannot install the deck skill at $target because that path already exists and is not managed by Cyberdeck. Move or remove it, then re-run."
+  fi
+  if [ "$DRY_RUN" -eq 1 ]; then
+    note "$client: would install the deck skill at $target"
+    return
+  fi
+  rm -rf "$temporary"
+  mkdir -p "$(dirname "$target")"
+  cp -R "$SOURCE_SKILL" "$temporary"
+  printf 'managed by cyberdeck install.sh\n' >"$temporary/.cyberdeck-managed"
+  rm -rf "$target"
+  mv "$temporary" "$target"
+  note "$client: installed the deck skill at $target"
+}
+install_deck_skill "Claude Code" "$HOME/.claude/skills/deck"
+install_deck_skill "Codex and ChatGPT Desktop" "$HOME/.codex/skills/deck"
+
 # --- macOS desktop clients --------------------------------------------------------
 PLATFORM="$(uname -s)"
 if [ "$PLATFORM" = "Darwin" ]; then

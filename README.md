@@ -155,7 +155,10 @@ It registers Claude Code at user scope in the documented default
 `~/.claude.json` (using `claude mcp add` when the CLI is present) and writes
 its permission rules to `~/.claude/settings.json`. It always writes the Codex
 registration to `~/.codex/config.toml`. It verifies that the installed policy
-loads.
+loads. The portable `deck` skill is installed at
+`~/.claude/skills/deck` and `~/.codex/skills/deck`; an existing skill with the
+same name is never overwritten unless it carries Cyberdeck's management
+marker.
 
 On macOS only, the installer detects desktop apps without downloading or
 installing them:
@@ -173,6 +176,25 @@ installing them:
   command runs. Only the CLI registrations are handled.
 
 No browser app is configured.
+
+### Invoke with the deck skill
+
+Start the client inside the project Cyberdeck may access, then invoke the
+same shipped workflow using the syntax supported by that client:
+
+```text
+Claude Code:      /deck investigate the authentication flow
+Codex CLI:        $deck investigate the authentication flow
+ChatGPT Desktop:  @deck investigate the authentication flow
+```
+
+The skill selects `research` or `implement`, chooses a suitable role, converts
+the request into a self-contained task, and calls Cyberdeck with the absolute
+project directory. Explicit role, model, thinking, timeout, or context-file
+overrides are preserved. Claude documents direct `/skill-name` invocation;
+Codex uses `$` and ChatGPT uses `@` for explicit skill selection. See
+[Claude Code skills](https://code.claude.com/docs/en/slash-commands) and
+[OpenAI skills](https://learn.chatgpt.com/docs/build-skills).
 
 ### If the installer stops
 
@@ -192,6 +214,8 @@ the same command — the installer is idempotent, and it never uses sudo.
 | `empty API key` / `Pi does not report OpenRouter credentials as ready` | Nothing was stored, or the key was rejected. Check with `pi auth check --provider openrouter`; re-run to be prompted again. |
 | `pi was installed or detected but cannot now be found on PATH` | Add npm's global `bin` directory to the current shell's `PATH` and re-run. |
 | `cannot update ~/.claude.json` or `~/.claude/settings.json` | Ensure the named file contains valid JSON and is writable, then re-run. Existing unrelated settings are preserved. |
+| `the bundled deck skill is missing` | Restore or update the Cyberdeck checkout and re-run. The one-command installer normally updates `~/.cyberdeck/app` automatically. |
+| `cannot install the deck skill at <path> because that path already exists` | A non-Cyberdeck skill already owns the name `deck`. Move or remove that directory, then re-run; the installer never overwrites it. |
 | `zip is required to build the Claude Desktop MCP bundle on macOS` | Install Apple's Xcode command-line tools (`xcode-select --install`) and re-run. This check is never made on Linux. |
 | `verification failed: the resolved configuration does not load` | `node ~/.cyberdeck/app/bin/cyberdeck-mcp.mjs --config ~/.cyberdeck/cyberdeck.config.json --inspect` prints the installed configuration error. Fix `~/.cyberdeck/cyberdeck.config.json` and re-run. A checkout install uses its own app path with the same installed config. |
 | `pi <found> found; left untouched (tested with <pinned>…)` (not a stop) | A different Pi version stays as it is. `--pin-pi` installs the tested version, up or down. |
@@ -205,6 +229,8 @@ under Settings > Extensions; its configured workspace must still exist.
 
 ```sh
 claude mcp remove --scope user cyberdeck
+[ -f ~/.claude/skills/deck/.cyberdeck-managed ] && rm -rf ~/.claude/skills/deck
+[ -f ~/.codex/skills/deck/.cyberdeck-managed ] && rm -rf ~/.codex/skills/deck
 rm -rf ~/.cyberdeck
 ```
 

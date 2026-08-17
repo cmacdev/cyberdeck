@@ -50,6 +50,8 @@ test("the Linux dry-run configures only Claude Code and the default Codex locati
   assert.equal(stderr, "");
   assert.match(stdout, /Claude Code CLI not found; would register cyberdeck directly in .*\.claude\.json/);
   assert.match(stdout, /Codex: would append \[mcp_servers\.cyberdeck\] block to .*\.codex\/config\.toml/);
+  assert.match(stdout, /Claude Code: would install the deck skill at .*\.claude\/skills\/deck/);
+  assert.match(stdout, /Codex and ChatGPT Desktop: would install the deck skill at .*\.codex\/skills\/deck/);
   assert.match(stdout, /macOS desktop integrations skipped on Linux/);
   assert.doesNotMatch(stdout, /OpenCode|Grok Build/);
   assert.doesNotMatch(stdout, /would run: open|would run: zip/);
@@ -127,6 +129,59 @@ test("an install without client binaries still writes the default Claude and Cod
   assert.ok(permissions.permissions.ask.includes("mcp__cyberdeck__implement"));
   const codex = await readFile(path.join(fixture.root, ".codex", "config.toml"), "utf8");
   assert.match(codex, /^\[mcp_servers\.cyberdeck\]$/m);
+  for (const target of [
+    path.join(fixture.root, ".claude", "skills", "deck"),
+    path.join(fixture.root, ".codex", "skills", "deck"),
+  ]) {
+    assert.match(await readFile(path.join(target, "SKILL.md"), "utf8"), /^name: deck$/m);
+    assert.match(
+      await readFile(path.join(target, ".cyberdeck-managed"), "utf8"),
+      /managed by cyberdeck/,
+    );
+  }
+});
+
+test("the shipped deck skill is concise and names the Cyberdeck routing contract", async () => {
+  const skill = await readFile(path.join(packageDirectory, "skills", "deck", "SKILL.md"), "utf8");
+  const metadata = await readFile(
+    path.join(packageDirectory, "skills", "deck", "agents", "openai.yaml"),
+    "utf8",
+  );
+  assert.match(skill, /^---\nname: deck\ndescription: .+\n---/);
+  assert.doesNotMatch(skill, /TODO/);
+  for (const term of ["`research`", "`implement`", "`working_directory`", "`mechanical`", "`gritty`"]) {
+    assert.ok(skill.includes(term), `missing ${term}`);
+  }
+  assert.match(metadata, /default_prompt: "Use \$deck /);
+});
+
+test("the installer refuses to overwrite an unmanaged deck skill", async (t) => {
+  const fixture = await makeFixture(t);
+  const bin = path.join(fixture.root, "bin");
+  await mkdir(bin);
+  const fakePi = path.join(bin, "pi");
+  await writeFile(
+    fakePi,
+    "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo 'pi 0.84.2'; else echo ready; fi\n",
+  );
+  await chmod(fakePi, 0o755);
+  const existing = path.join(fixture.root, ".claude", "skills", "deck");
+  await mkdir(existing, { recursive: true });
+  await writeFile(path.join(existing, "SKILL.md"), "user-owned\n");
+
+  const { code, stderr } = await runWithClosedInput("bash", ["install.sh", "--dry-run"], {
+    cwd: packageDirectory,
+    env: {
+      ...process.env,
+      HOME: fixture.root,
+      CYBERDECK_HOME: path.join(fixture.root, ".cyberdeck"),
+      PATH: `${bin}:${testSystemPath}`,
+    },
+  });
+
+  assert.equal(code, 1);
+  assert.match(stderr, /cannot install the deck skill .* path already exists and is not managed/);
+  assert.equal(await readFile(path.join(existing, "SKILL.md"), "utf8"), "user-owned\n");
 });
 
 test("the Claude Desktop bundle manifest is macOS-only and collects a workspace root", async () => {

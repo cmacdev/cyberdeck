@@ -1,0 +1,4 @@
+interface:
+  display_name: "Cyberdeck"
+  short_description: "Delegate work through the Cyberdeck MCP"
+  default_prompt: "Use $deck to delegate this task through Cyberdeck."
