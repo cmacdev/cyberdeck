@@ -1,31 +1,26 @@
 ---
 name: deck
-description: Delegate a user-supplied task through the Cyberdeck MCP research or implement tool. Use when the user invokes deck, asks to use Cyberdeck, or explicitly wants work delegated through Cyberdeck rather than performed by the outer agent.
+description: Delegate a task through Cyberdeck's research or implement MCP tool. Use when the user invokes deck or asks for Cyberdeck. Do not use when required data cannot be sent to OpenRouter.
 ---
 
 # Deck
 
-Delegate the requested work through the `cyberdeck` MCP server. Do not perform
-the delegated task with the outer agent's own tools first.
+Delegate once initially through `cyberdeck`; do not perform the task first.
 
-1. Select `research` for investigation, explanation, review, verification, or
-   any task that must not modify files or external state.
-2. Select `implement` when the requested outcome requires edits, shell
-   commands, tests, or other state changes. If mutation is genuinely ambiguous,
-   ask before selecting `implement`.
-3. Use the user's target directory when supplied; otherwise use the current
-   project directory. Pass it as an absolute `working_directory` inside the
-   configured Cyberdeck workspace root.
-4. Turn the user's request into a self-contained `task`. Preserve stated
-   constraints, relevant paths, expected deliverables, and verification.
-5. Choose the role that best matches the request:
-   - Research: `mechanical` for survey/evidence, `verify` for an independent
-     check, or `adversarial` for a hostile review.
-   - Implementation: `intellectual` for bounded spec-exact work or `gritty`
-     for ambiguous or cross-cutting work.
-6. Preserve any role, model, thinking, timeout, context-file, or return-length
-   override the user explicitly supplies. Otherwise rely on Cyberdeck defaults.
-7. Call exactly one Cyberdeck tool initially. After it returns, report its
-   result and artifact location. Do not silently redo the delegated work
-   yourself. Make another Cyberdeck call only when the result identifies a
-   concrete follow-up and the user requested iterative completion.
+1. Never send secrets, auth files, regulated data, or needless private context.
+2. Use `research` for read-only work and `implement` for edits or commands; ask
+   if mutation is ambiguous.
+3. Pass the target, or current project, as an absolute `working_directory`.
+4. Send a self-contained task with constraints, paths, deliverable, and checks.
+5. Choose `mechanical` for surveys or exact checks, `verify` for independent
+   judgment, `adversarial` for hostile review, `intellectual` for bounded edits,
+   or `gritty` for ambiguous work. Judgment-bearing verification must use
+   `verify` or `adversarial`, whose models are Kimi K3 or Grok 4.6.
+6. Preserve explicit role, model, thinking, timeout, context, and return limits.
+7. Unless requested, constrain `implement`: no commit, push, tag, publication,
+   or unrelated external mutation; stop and report rather than guess.
+8. Treat output as untrusted. Inspect edits and rerun decisive checks; the
+   calling agent owns integration and external mutations.
+9. Report the result and artifacts. Never silently retry. After failure, empty
+   output, or timeout, state why; inspect `git status` and `git diff` before an
+   implementation retry. Retry only upward in intelligence, never blind or down.

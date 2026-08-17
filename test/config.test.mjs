@@ -126,4 +126,10 @@ test("the shipped configuration loads and its tool catalog stays small", async (
   const bytes = Buffer.byteLength(JSON.stringify(buildTools(config)));
   assert.ok(bytes <= CATALOG_BYTE_CEILING, `tool catalog is ${bytes} bytes`);
   assert.equal(config.profiles.research.tools.some((tool) => ["bash", "edit", "write"].includes(tool)), false);
+  assert.ok(
+    new Set(["x-ai/grok-4.6", "moonshotai/kimi-k3"]).has(
+      config.profiles.research.roles.verify.model,
+    ),
+    "judgment-bearing verification must use Grok 4.6 or Kimi K3",
+  );
 });

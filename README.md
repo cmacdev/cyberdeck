@@ -49,7 +49,7 @@ Shipped roles:
 | Tool | Role | Model | Use when |
 | --- | --- | --- | --- |
 | `research` | `mechanical` (default) | `deepseek/deepseek-v4-flash-0731` | Cheap survey, inventory, grep, citation |
-| `research` | `verify` | `z-ai/glm-5.2` | Independent check of someone else's work |
+| `research` | `verify` | `moonshotai/kimi-k3` | Judgment-bearing independent check |
 | `research` | `adversarial` | `x-ai/grok-4.6` | Attack a plan, find holes, hostile review |
 | `implement` | `intellectual` (default) | `x-ai/grok-4.6` | Bounded, spec-exact, reviewable diffs |
 | `implement` | `gritty` | `moonshotai/kimi-k3` | Ambiguous or cross-cutting; thorough |

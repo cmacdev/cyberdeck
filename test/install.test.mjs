@@ -149,7 +149,14 @@ test("the shipped deck skill is concise and names the Cyberdeck routing contract
   );
   assert.match(skill, /^---\nname: deck\ndescription: .+\n---/);
   assert.doesNotMatch(skill, /TODO/);
-  for (const term of ["`research`", "`implement`", "`working_directory`", "`mechanical`", "`gritty`"]) {
+  for (const term of [
+    "`research`",
+    "`implement`",
+    "`working_directory`",
+    "`mechanical`",
+    "`gritty`",
+    "Retry only upward in intelligence",
+  ]) {
     assert.ok(skill.includes(term), `missing ${term}`);
   }
   assert.match(metadata, /default_prompt: "Use \$deck /);
