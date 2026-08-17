@@ -10,11 +10,10 @@ role fits the task. Cyberdeck only enforces the visible policy: read-only
 `research` versus write-capable `implement`, bound models, workspace roots,
 limits, and artifacts.
 
-Any MCP client that can launch a local stdio server can use it: Claude Code,
-Codex, OpenCode, Grok Build, Cursor, and the same class of tools. The
-installer wires Claude Code and Codex when those CLIs are present, and
-OpenCode or Grok Build when their config is present. Other clients need the
-stdio command below.
+Any MCP client that can launch a local stdio server can use it, but this
+installer deliberately supports only Claude Code and Codex CLI. On macOS,
+the same install also prepares ChatGPT Desktop and an installable Claude
+Desktop extension. It does not register other clients or browser apps.
 
 Pi is the inner execution engine Cyberdeck spawns. It is not the primary
 client. Pi's core has no MCP client; people who drive Pi as their outer agent
@@ -102,8 +101,9 @@ destructive behavior accurately. Temperament stays in `role`.
 ## Requirements
 
 - Node.js 20 or newer. There are no npm dependencies.
-- Pi available on `PATH` (tested against Pi 0.84.2), or a custom
-  `pi.command`/`pi.arguments` configuration.
+- Pi available on `PATH` while installing (tested against Pi 0.84.2), or a
+  custom `pi.command`/`pi.arguments` configuration afterward. The installer
+  records Pi's absolute path so GUI clients do not depend on a shell `PATH`.
 - OpenRouter credentials available through `OPENROUTER_API_KEY` or Pi's
   existing authentication store.
 - Only when Pi is absent: npm's global directory must be writable by the
@@ -127,8 +127,10 @@ instead:
 gh api repos/cmacdev/cyberdeck/contents/install.sh -H "Accept: application/vnd.github.raw" | bash
 ```
 
-Either form clones into `~/.cyberdeck/app`, updates it on re-runs, and
-registers that fixed path; `CYBERDECK_REPO_URL` overrides the source. Append
+Either form clones into `~/.cyberdeck/app`, creates the machine-specific
+policy at `~/.cyberdeck/cyberdeck.config.json`, and registers those fixed
+paths; `CYBERDECK_REPO_URL` overrides the source. Re-runs update the app but
+preserve the installed policy so local changes are not overwritten. Append
 `-s -- --dry-run` to `bash` to print the plan without changing anything.
 Agents installing on someone's behalf should use this form rather than a
 checkout, and hand the API-key prompt to the user (see the table below).
@@ -143,12 +145,34 @@ bash install.sh
 The installer is idempotent, never uses sudo, and never touches an existing
 Pi (it warns when the found version differs from the tested one; `--pin-pi`
 installs the tested version, up or down). When Pi is absent it installs the
-pinned version via npm. If no OpenRouter credentials exist it prompts once with hidden input and
-stores the key in Pi's own auth store — never in cyberdeck files or MCP
-configuration. It then registers the server with Claude Code and Codex when
-those CLIs are present, and with OpenCode or Grok Build when their config
-directory or CLI is present. It verifies that the resolved configuration
+pinned version via npm. If Pi has no OpenRouter credentials, the installer
+stores `OPENROUTER_API_KEY` when supplied or prompts once with hidden input,
+then stores the key in Pi's own auth store — never in Cyberdeck files or MCP
+configuration. This persistence is required because desktop apps do not
+reliably inherit terminal environment variables.
+
+It registers Claude Code at user scope in the documented default
+`~/.claude.json` (using `claude mcp add` when the CLI is present) and writes
+its permission rules to `~/.claude/settings.json`. It always writes the Codex
+registration to `~/.codex/config.toml`. It verifies that the installed policy
 loads.
+
+On macOS only, the installer detects desktop apps without downloading or
+installing them:
+
+- ChatGPT Desktop shares `~/.codex/config.toml` with Codex, so no second
+  registration is written; restart the app after installation.
+- When Claude Desktop is already installed, the installer builds
+  `~/.cyberdeck/cyberdeck.mcpb` and opens its installation dialog. Select the
+  project directory (or projects parent, but not your home directory) that
+  Cyberdeck may access, then approve the extension in Claude.
+  This user confirmation is required by Claude's supported custom-extension
+  flow; in an interactive terminal the installer waits for you to finish it.
+  The shell installer does not edit Claude Desktop's private app state.
+- On Linux (including NixOS), no macOS app detection, packaging, or `open`
+  command runs. Only the CLI registrations are handled.
+
+No browser app is configured.
 
 ### If the installer stops
 
@@ -159,21 +183,23 @@ the same command — the installer is idempotent, and it never uses sudo.
 | --- | --- |
 | `curl: (22)` or `(56) The requested URL returned error: 404` | The repo is private (or the URL is wrong): use the `gh api` form above with an authenticated `gh`. |
 | `Node.js >= 20 is required` | Install or upgrade Node (e.g. `brew install node`) so `node` on `PATH` is 20 or newer. |
-| `npm's global directory … is not writable by <user>` | `npm config set prefix ~/.npm-global && export PATH="$HOME/.npm-global/bin:$PATH"`, and put the `PATH` line in your shell profile (`~/.zshrc`, `~/.bashrc`) so the MCP clients find `pi`. Do not sudo. |
-| `ACTION REQUIRED: add <dir> to PATH` (not a stop) | Pi was installed into npm's global `bin`, which is not on your `PATH`. Add it to your shell profile; the MCP clients start `pi` from that `PATH`. |
+| `npm is required to install Pi` | Install Node.js with npm included, then re-run. |
+| `npm's global directory … is not writable by <user>` | `npm config set prefix ~/.npm-global && export PATH="$HOME/.npm-global/bin:$PATH"`, and put the `PATH` line in your shell profile (`~/.zshrc`, `~/.bashrc`). Do not sudo. |
+| `ACTION REQUIRED: add <dir> to PATH` (not a stop) | Pi was installed into npm's global `bin`, which is not on your normal `PATH`. The installer records its absolute path for MCP clients, but add the directory to your shell profile for future terminal use. |
 | `git is required` | Install git (`xcode-select --install` or `brew install git`). |
 | `cannot read <repo> without a password prompt` | The repo is private. `gh auth login`, then `gh auth setup-git` (or store a GitHub credential in your keychain), and re-run. |
-| `no terminal available for the API key prompt` | Run the same command in an interactive terminal (the prompt reads `/dev/tty`), or export `OPENROUTER_API_KEY` in the environment the MCP clients start with — the installer then leaves credentials to that variable. Agents: hand this step to the user; do not ask for or handle the key. |
+| `no terminal available for the API key prompt` | Run the same command in an interactive terminal (the prompt reads `/dev/tty`), or set `OPENROUTER_API_KEY` for the installer; it stores the value in Pi's auth store for CLI and desktop use. Agents: hand this step to the user; do not ask for or handle the key. |
 | `empty API key` / `Pi does not report OpenRouter credentials as ready` | Nothing was stored, or the key was rejected. Check with `pi auth check --provider openrouter`; re-run to be prompted again. |
-| `verification failed: the resolved configuration does not load` | `node <app>/bin/cyberdeck-mcp.mjs --config <app>/cyberdeck.config.json --inspect` prints the configuration error (`<app>` is the checkout or `~/.cyberdeck/app`). Fix `cyberdeck.config.json` and re-run. |
+| `pi was installed or detected but cannot now be found on PATH` | Add npm's global `bin` directory to the current shell's `PATH` and re-run. |
+| `cannot update ~/.claude.json` or `~/.claude/settings.json` | Ensure the named file contains valid JSON and is writable, then re-run. Existing unrelated settings are preserved. |
+| `zip is required to build the Claude Desktop MCP bundle on macOS` | Install Apple's Xcode command-line tools (`xcode-select --install`) and re-run. This check is never made on Linux. |
+| `verification failed: the resolved configuration does not load` | `node ~/.cyberdeck/app/bin/cyberdeck-mcp.mjs --config ~/.cyberdeck/cyberdeck.config.json --inspect` prints the installed configuration error. Fix `~/.cyberdeck/cyberdeck.config.json` and re-run. A checkout install uses its own app path with the same installed config. |
 | `pi <found> found; left untouched (tested with <pinned>…)` (not a stop) | A different Pi version stays as it is. `--pin-pi` installs the tested version, up or down. |
 
 After a successful run, restart the client. If the tools do not appear:
-`claude mcp get cyberdeck` (Claude Code) or `~/.codex/config.toml` (Codex)
-shows the registration. If a `research` call returns `status: "failed"` with
-`error` containing `spawn pi ENOENT`, `pi` is not on the `PATH` the client
-starts with — add npm's global `bin` to your shell profile and restart the
-client.
+`claude mcp get cyberdeck` (Claude Code) or `~/.codex/config.toml` (Codex and
+ChatGPT Desktop) shows the registration. Claude Desktop shows the extension
+under Settings > Extensions; its configured workspace must still exist.
 
 ### Uninstall
 
@@ -183,17 +209,18 @@ rm -rf ~/.cyberdeck
 ```
 
 Then delete the `[mcp_servers.cyberdeck]` block from `~/.codex/config.toml`
-(likewise `mcp.cyberdeck` in `~/.config/opencode/opencode.json` or the block
-in `~/.grok/config.toml` if present) and the two `mcp__cyberdeck__*` rules
-from `~/.claude/settings.json`. Pi and its auth store are left as they were;
+and the two `mcp__cyberdeck__*` rules from `~/.claude/settings.json`. On a Mac,
+remove the Cyberdeck extension in Claude Desktop before deleting
+`~/.cyberdeck`. Pi and its auth store are left as they were;
 `npm uninstall -g @earendil-works/pi-coding-agent` and `rm -rf ~/.pi` remove
-them if you want that too. Run artifacts live in `.cyberdeck/runs` next to
-the config file, so the one-command install's artifacts go with
-`~/.cyberdeck`; a checkout install keeps them in the checkout (gitignored).
+them if you want that too. The one-command install stores run artifacts under
+`~/.cyberdeck/runs` (and Claude Desktop runs under
+`~/.cyberdeck/claude-desktop-runs`), so they go with `~/.cyberdeck`.
 
 ## Configure
 
-Edit `cyberdeck.config.json`:
+For a one-command install, edit `~/.cyberdeck/cyberdeck.config.json`. In a
+development checkout, edit the checked-in `cyberdeck.config.json`:
 
 1. Edit each profile's `roles` to change the bound model or the one-line
    `when` text the calling agent sees. `defaultRole` is used when the caller
@@ -220,7 +247,7 @@ The output includes both MCP input/output schemas, safety annotations,
 resolved paths, the role catalog, tool allowlists, and limits. It never
 includes API keys.
 
-## Connect any MCP client
+## Client setup
 
 Cyberdeck is a local stdio server. Point the client at:
 
@@ -232,62 +259,15 @@ Start the client inside a project. The default `@cwd` workspace root is the
 server process working directory, which should be that project — not `/` or
 `$HOME`.
 
-### OpenCode
-
-Add a local server to `~/.config/opencode/opencode.json` (or the project
-`opencode.json`):
-
-```json
-{
-  "$schema": "https://opencode.ai/config.json",
-  "mcp": {
-    "cyberdeck": {
-      "type": "local",
-      "command": [
-        "node",
-        "/absolute/path/to/cyberdeck/bin/cyberdeck-mcp.mjs",
-        "--config",
-        "/absolute/path/to/cyberdeck/cyberdeck.config.json"
-      ],
-      "enabled": true
-    }
-  }
-}
-```
-
-See the official [OpenCode MCP servers](https://opencode.ai/docs/mcp-servers/) guide.
-
-### Grok Build
-
-```sh
-grok mcp add cyberdeck -- node /absolute/path/to/cyberdeck/bin/cyberdeck-mcp.mjs --config /absolute/path/to/cyberdeck/cyberdeck.config.json
-```
-
-Or declare it in `~/.grok/config.toml`:
-
-```toml
-[mcp_servers.cyberdeck]
-command = "node"
-args = [
-  "/absolute/path/to/cyberdeck/bin/cyberdeck-mcp.mjs",
-  "--config",
-  "/absolute/path/to/cyberdeck/cyberdeck.config.json",
-]
-startup_timeout_sec = 10
-tool_timeout_sec = 1900
-```
-
-See the official [Grok Build MCP servers](https://docs.x.ai/build/features/mcp-servers) page.
-
 ### Codex
 
 Copy `codex-config.example.toml` into your user-level `~/.codex/config.toml`,
-replacing the two Cyberdeck paths and the common workspace path. The
+replacing the Node path, two Cyberdeck paths, and common workspace path. The
 important portion is:
 
 ```toml
 [mcp_servers.cyberdeck]
-command = "node"
+command = "/absolute/path/to/node"
 args = [
   "/absolute/path/to/cyberdeck/bin/cyberdeck-mcp.mjs",
   "--config",
@@ -295,7 +275,6 @@ args = [
 ]
 cwd = "/absolute/path/to/your-workspace-parent"
 enabled_tools = ["research", "implement"]
-env_vars = ["OPENROUTER_API_KEY"]
 tool_timeout_sec = 1900
 
 [mcp_servers.cyberdeck.tools.research]
@@ -305,9 +284,8 @@ approval_mode = "auto"
 approval_mode = "prompt"
 ```
 
-Restart Codex after changing MCP configuration. If Pi authenticates from its
-own auth store rather than an environment variable, `env_vars` can be
-omitted.
+Restart Codex after changing MCP configuration. The installer uses Pi's auth
+store, so no API key is copied into this file.
 
 Codex currently supports stdio MCP configuration with per-server commands,
 working directories, environment-variable forwarding, enabled-tool
@@ -339,6 +317,24 @@ approval modes with permission rules in `~/.claude/settings.json`:
 
 `claude mcp list` shows connection health. Restart the session after changing
 MCP or permission configuration.
+
+### macOS desktop apps
+
+ChatGPT Desktop, Codex CLI, and the Codex IDE extension
+[share the same local Codex host configuration](https://learn.chatgpt.com/docs/extend/mcp?surface=cli).
+The installer's `~/.codex/config.toml` entry is therefore the ChatGPT Desktop
+registration too; use Settings > MCP servers or `/mcp` to confirm it after
+restarting the app.
+
+Claude Desktop does **not** consume Claude Code's user-scoped MCP entry. Its
+[supported custom local-server flow](https://support.claude.com/en/articles/10949351-getting-started-with-local-mcp-servers-on-claude-desktop)
+uses an [MCP Bundle (`.mcpb`)](https://github.com/modelcontextprotocol/mcpb).
+On a Mac with Claude already installed, `install.sh` packages Cyberdeck and
+opens the resulting bundle so Claude can collect the required workspace root
+and show the install approval. To install it later, open
+`~/.cyberdeck/cyberdeck.mcpb`, or use Settings > Extensions > Advanced
+settings > Install Extension. Re-running the installer rebuilds the bundle;
+approve the updated bundle in Claude Desktop to update that integration.
 
 ## Typed calls
 
@@ -422,8 +418,8 @@ else.`; expect `ok: true`, `final_output` containing `READY`, and non-zero
 Cyberdeck uses newline-delimited JSON-RPC over stdio with no runtime
 dependencies. It implements the current MCP `2026-07-28` stateless
 discovery/result shape and legacy initialization versions used by current
-Claude Code, Codex, OpenCode, and Grok Build clients (Claude Code negotiates
-`2025-06-18`). A request that carries a modern
+Claude Code, Claude Desktop, Codex, and ChatGPT Desktop clients (Claude Code
+negotiates `2025-06-18`). A request that carries a modern
 `_meta["io.modelcontextprotocol/protocolVersion"]` is checked against the
 supported version (unsupported → `-32022` with the supported list, so the
 client can retry); a request without one is served under legacy semantics.
