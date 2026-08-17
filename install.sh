@@ -71,7 +71,7 @@ else
     fi
   fi
 fi
-CONFIG_PATH="$APP_DIR/cyberdeck.config.json"
+SOURCE_CONFIG_PATH="$APP_DIR/cyberdeck.config.json"
 
 # --- Node ----------------------------------------------------------------------
 command -v node >/dev/null 2>&1 || die "Node.js >= 20 is required. Install it first (e.g. 'brew install node')."
@@ -93,14 +93,14 @@ install_pi() {
   command -v npm >/dev/null 2>&1 || die "npm is required to install Pi; it ships with Node."
   npm_global_writable || die "npm's global directory ($(npm prefix -g)) is not writable by $(id -un), and this installer never uses sudo (typical when Node was installed from another user account). Give npm a user-level prefix, then re-run:
   npm config set prefix ~/.npm-global && export PATH=\"\$HOME/.npm-global/bin:\$PATH\"
-Put that PATH line in your shell profile too, so the MCP clients can find pi."
+Put that PATH line in your shell profile too, so future shells can find pi."
   run npm install -g "$PI_PACKAGE@$PINNED_PI"
   NPM_BIN="$(npm prefix -g)/bin"
   case ":$PATH:" in
     *":$NPM_BIN:"*) ;;
     *)
       export PATH="$NPM_BIN:$PATH"
-      note "ACTION REQUIRED: add $NPM_BIN to PATH in your shell profile; the MCP clients must find pi there"
+      note "ACTION REQUIRED: add $NPM_BIN to PATH in your shell profile so future shells can find pi"
       ;;
   esac
 }
@@ -130,21 +130,10 @@ fi
 
 # --- OpenRouter credentials ------------------------------------------------------
 auth_ready() {
-  pi auth check --provider openrouter 2>/dev/null | grep -q '^ready'
+  (unset OPENROUTER_API_KEY; pi auth check --provider openrouter 2>/dev/null) | grep -q '^ready'
 }
-if [ -n "${OPENROUTER_API_KEY:-}" ]; then
-  note "OPENROUTER_API_KEY is set in the environment; Pi will use it"
-elif command -v pi >/dev/null 2>&1 && auth_ready; then
-  note "Pi already has OpenRouter credentials; left untouched"
-elif [ "$DRY_RUN" -eq 1 ]; then
-  note "would prompt for an OpenRouter API key (hidden input) and store it in Pi's auth store"
-else
-  [ -r /dev/tty ] || die "no terminal available for the API key prompt; set OPENROUTER_API_KEY and re-run."
-  printf "OpenRouter API key (input hidden): " >/dev/tty
-  IFS= read -rs OPENROUTER_KEY_INPUT </dev/tty
-  echo >/dev/tty
-  [ -n "$OPENROUTER_KEY_INPUT" ] || die "empty API key."
-  OR_KEY="$OPENROUTER_KEY_INPUT" node -e '
+store_openrouter_key() {
+  OR_KEY="$1" node -e '
     const { mkdirSync, readFileSync, writeFileSync, chmodSync, existsSync } = require("node:fs");
     const path = require("node:path");
     const file = path.join(process.env.HOME, ".pi", "agent", "auth.json");
@@ -154,64 +143,159 @@ else
     writeFileSync(file, JSON.stringify(store, null, 2) + "\n", { mode: 0o600 });
     chmodSync(file, 0o600);
   '
-  unset OPENROUTER_KEY_INPUT OR_KEY
+}
+if command -v pi >/dev/null 2>&1 && auth_ready; then
+  note "Pi already has OpenRouter credentials; left untouched"
+elif [ -n "${OPENROUTER_API_KEY:-}" ]; then
+  if [ "$DRY_RUN" -eq 1 ]; then
+    note "would store OPENROUTER_API_KEY in Pi's auth store for CLI and desktop clients"
+  else
+    store_openrouter_key "$OPENROUTER_API_KEY"
+    auth_ready || die "Pi does not report OpenRouter credentials as ready after storing the key."
+    note "stored OPENROUTER_API_KEY in Pi's auth store (~/.pi/agent/auth.json, mode 600)"
+  fi
+elif [ "$DRY_RUN" -eq 1 ]; then
+  note "would prompt for an OpenRouter API key (hidden input) and store it in Pi's auth store"
+else
+  [ -r /dev/tty ] || die "no terminal available for the API key prompt; set OPENROUTER_API_KEY and re-run."
+  printf "OpenRouter API key (input hidden): " >/dev/tty
+  IFS= read -rs OPENROUTER_KEY_INPUT </dev/tty
+  echo >/dev/tty
+  [ -n "$OPENROUTER_KEY_INPUT" ] || die "empty API key."
+  store_openrouter_key "$OPENROUTER_KEY_INPUT"
+  unset OPENROUTER_KEY_INPUT
   auth_ready || die "Pi does not report OpenRouter credentials as ready after storing the key."
   note "stored OpenRouter key in Pi's auth store (~/.pi/agent/auth.json, mode 600)"
 fi
 
+# Resolve executable paths once so GUI clients do not depend on a login-shell PATH.
+NODE_COMMAND="$(node -p 'process.execPath')"
+if command -v pi >/dev/null 2>&1; then
+  PI_COMMAND="$(command -v pi)"
+elif [ "$DRY_RUN" -eq 1 ]; then
+  PI_COMMAND="<absolute-path-to-pi>"
+else
+  die "pi was installed or detected but cannot now be found on PATH. Add npm's global bin directory to PATH and re-run."
+fi
+
+# Keep machine-specific paths and run artifacts outside the git checkout. Preserve
+# this file on re-runs so installer updates never overwrite user policy changes.
+CONFIG_PATH="$CYBERDECK_HOME/cyberdeck.config.json"
+PI_POINTER="$CYBERDECK_HOME/pi-command"
+if [ "$DRY_RUN" -eq 1 ]; then
+  if [ -f "$CONFIG_PATH" ]; then
+    note "installed policy at $CONFIG_PATH already exists; would leave it untouched"
+  else
+    note "would create installed policy at $CONFIG_PATH with machine-specific executable paths"
+  fi
+  note "would record the Pi executable path for Claude Desktop at $PI_POINTER"
+else
+  mkdir -p "$CYBERDECK_HOME"
+  printf '%s\n' "$PI_COMMAND" >"$PI_POINTER"
+  chmod 600 "$PI_POINTER"
+  if [ -f "$CONFIG_PATH" ]; then
+    note "installed policy at $CONFIG_PATH already exists; left untouched"
+  else
+    SOURCE_CONFIG_PATH="$SOURCE_CONFIG_PATH" CONFIG_PATH="$CONFIG_PATH" \
+      PI_COMMAND="$PI_COMMAND" CYBERDECK_HOME="$CYBERDECK_HOME" node -e '
+        const { readFileSync, writeFileSync, chmodSync } = require("node:fs");
+        const path = require("node:path");
+        const source = process.env.SOURCE_CONFIG_PATH;
+        const target = process.env.CONFIG_PATH;
+        const config = JSON.parse(readFileSync(source, "utf8"));
+        config.$schema = path.join(path.dirname(source), "cyberdeck.config.schema.json");
+        config.artifactDirectory = path.join(process.env.CYBERDECK_HOME, "runs");
+        config.pi.command = process.env.PI_COMMAND;
+        writeFileSync(target, JSON.stringify(config, null, 2) + "\n", { mode: 0o600 });
+        chmodSync(target, 0o600);
+      '
+    note "created installed policy at $CONFIG_PATH (absolute Pi path; artifacts in $CYBERDECK_HOME/runs)"
+  fi
+fi
+
 # --- Register with Claude Code ----------------------------------------------------
+# User-scoped MCP servers live in ~/.claude.json. Prefer Claude's CLI when it
+# is present; otherwise merge the same documented stdio shape directly so the
+# default location is ready when Claude Code is installed.
+CLAUDE_CONFIG="$HOME/.claude.json"
 if command -v claude >/dev/null 2>&1; then
   if claude mcp get cyberdeck >/dev/null 2>&1; then
     note "Claude Code: cyberdeck already registered; left untouched"
   else
-    run claude mcp add --scope user cyberdeck -- node "$APP_DIR/bin/cyberdeck-mcp.mjs" --config "$CONFIG_PATH"
+    run claude mcp add --scope user cyberdeck -- "$NODE_COMMAND" "$APP_DIR/bin/cyberdeck-mcp.mjs" --config "$CONFIG_PATH"
     if [ "$DRY_RUN" -eq 1 ]; then
       note "Claude Code: would register cyberdeck at user scope"
     else
       note "Claude Code: registered cyberdeck at user scope"
     fi
   fi
-  if [ "$DRY_RUN" -eq 1 ]; then
-    note "Claude Code: would add permission rules (allow research, ask implement) to ~/.claude/settings.json"
-  else
-    node -e '
-      const { mkdirSync, readFileSync, writeFileSync, existsSync } = require("node:fs");
-      const path = require("node:path");
-      const file = path.join(process.env.HOME, ".claude", "settings.json");
-      mkdirSync(path.dirname(file), { recursive: true });
-      const settings = existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : {};
-      settings.permissions = settings.permissions ?? {};
-      for (const [list, rule] of [["allow", "mcp__cyberdeck__research"], ["ask", "mcp__cyberdeck__implement"]]) {
-        const rules = settings.permissions[list] ?? [];
-        if (!rules.includes(rule)) rules.push(rule);
-        settings.permissions[list] = rules;
-      }
-      writeFileSync(file, JSON.stringify(settings, null, 2) + "\n");
-    '
-    note "Claude Code: permission rules ensured (allow research, ask implement)"
-  fi
+elif [ -f "$CLAUDE_CONFIG" ] && node -e '
+  const settings = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8"));
+  process.exit(settings?.mcpServers?.cyberdeck ? 0 : 1);
+' "$CLAUDE_CONFIG" 2>/dev/null; then
+  note "Claude Code: cyberdeck already registered in $CLAUDE_CONFIG; left untouched"
+elif [ "$DRY_RUN" -eq 1 ]; then
+  note "Claude Code CLI not found; would register cyberdeck directly in $CLAUDE_CONFIG"
 else
-  note "Claude Code CLI not found; skipped (re-run after installing it)"
+  CLAUDE_CONFIG="$CLAUDE_CONFIG" NODE_COMMAND="$NODE_COMMAND" APP_DIR="$APP_DIR" \
+    CONFIG_PATH="$CONFIG_PATH" node -e '
+      const { existsSync, readFileSync, writeFileSync } = require("node:fs");
+      const file = process.env.CLAUDE_CONFIG;
+      const settings = existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : {};
+      settings.mcpServers = settings.mcpServers ?? {};
+      settings.mcpServers.cyberdeck = {
+        type: "stdio",
+        command: process.env.NODE_COMMAND,
+        args: [
+          `${process.env.APP_DIR}/bin/cyberdeck-mcp.mjs`,
+          "--config",
+          process.env.CONFIG_PATH,
+        ],
+        env: {},
+      };
+      writeFileSync(file, JSON.stringify(settings, null, 2) + "\n", { mode: 0o600 });
+    ' || die "cannot update $CLAUDE_CONFIG. Ensure it contains valid JSON and is writable, then re-run."
+  note "Claude Code CLI not found; registered cyberdeck directly in $CLAUDE_CONFIG"
 fi
 
-# --- Register with Codex -----------------------------------------------------------
-if [ -d "$HOME/.codex" ] || command -v codex >/dev/null 2>&1; then
-  CODEX_CONFIG="$HOME/.codex/config.toml"
-  if [ -f "$CODEX_CONFIG" ] && grep -q '^\[mcp_servers\.cyberdeck\]' "$CODEX_CONFIG"; then
-    note "Codex: cyberdeck already registered; left untouched"
-  elif [ "$DRY_RUN" -eq 1 ]; then
-    note "Codex: would append [mcp_servers.cyberdeck] block to $CODEX_CONFIG"
-  else
-    mkdir -p "$HOME/.codex"
-    cat >>"$CODEX_CONFIG" <<EOF
+if [ "$DRY_RUN" -eq 1 ]; then
+  note "Claude Code: would add permission rules (allow research, ask implement) to ~/.claude/settings.json"
+else
+  node -e '
+    const { mkdirSync, readFileSync, writeFileSync, existsSync } = require("node:fs");
+    const path = require("node:path");
+    const file = path.join(process.env.HOME, ".claude", "settings.json");
+    mkdirSync(path.dirname(file), { recursive: true });
+    const settings = existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : {};
+    settings.permissions = settings.permissions ?? {};
+    for (const [list, rule] of [["allow", "mcp__cyberdeck__research"], ["ask", "mcp__cyberdeck__implement"]]) {
+      const rules = settings.permissions[list] ?? [];
+      if (!rules.includes(rule)) rules.push(rule);
+      settings.permissions[list] = rules;
+    }
+    writeFileSync(file, JSON.stringify(settings, null, 2) + "\n");
+  ' || die "cannot update $HOME/.claude/settings.json. Ensure it contains valid JSON and is writable, then re-run."
+  note "Claude Code: permission rules ensured (allow research, ask implement)"
+fi
+
+# --- Register with Codex and ChatGPT Desktop --------------------------------------
+# ~/.codex/config.toml is the documented default and is shared by Codex CLI and
+# ChatGPT Desktop on the same Mac host. Register it even if the CLI is not on PATH.
+CODEX_CONFIG="$HOME/.codex/config.toml"
+if [ -f "$CODEX_CONFIG" ] && grep -q '^\[mcp_servers\.cyberdeck\]' "$CODEX_CONFIG"; then
+  note "Codex: cyberdeck already registered; left untouched"
+elif [ "$DRY_RUN" -eq 1 ]; then
+  note "Codex: would append [mcp_servers.cyberdeck] block to $CODEX_CONFIG"
+else
+  mkdir -p "$HOME/.codex"
+  cat >>"$CODEX_CONFIG" <<EOF
 
 # Added by cyberdeck install.sh. No cwd: the server inherits the session directory,
 # so cyberdeck's @cwd workspace root is the current project (root/home are refused).
 [mcp_servers.cyberdeck]
-command = "node"
+command = "$NODE_COMMAND"
 args = ["$APP_DIR/bin/cyberdeck-mcp.mjs", "--config", "$CONFIG_PATH"]
 enabled_tools = ["research", "implement"]
-env_vars = ["OPENROUTER_API_KEY"]
 startup_timeout_sec = 10
 tool_timeout_sec = 1900
 
@@ -221,88 +305,51 @@ approval_mode = "auto"
 [mcp_servers.cyberdeck.tools.implement]
 approval_mode = "prompt"
 EOF
-    note "Codex: appended cyberdeck block to $CODEX_CONFIG"
-  fi
-else
-  note "Codex not found; skipped (re-run after installing it)"
+  note "Codex: appended cyberdeck block to $CODEX_CONFIG"
 fi
 
-# --- Register with OpenCode --------------------------------------------------------
-OPENCODE_CONFIG=""
-if [ -f "$HOME/.config/opencode/opencode.json" ]; then
-  OPENCODE_CONFIG="$HOME/.config/opencode/opencode.json"
-elif command -v opencode >/dev/null 2>&1 || [ -d "$HOME/.config/opencode" ]; then
-  OPENCODE_CONFIG="$HOME/.config/opencode/opencode.json"
-fi
-opencode_registered() {
-  [ -f "$OPENCODE_CONFIG" ] && node -e '
-    const { readFileSync } = require("node:fs");
-    const settings = JSON.parse(readFileSync(process.argv[1], "utf8"));
-    process.exit(settings?.mcp?.cyberdeck ? 0 : 1);
-  ' "$OPENCODE_CONFIG" 2>/dev/null
-}
-if [ -n "$OPENCODE_CONFIG" ]; then
-  if opencode_registered; then
-    note "OpenCode: cyberdeck already registered in $OPENCODE_CONFIG; left untouched"
-  elif [ "$DRY_RUN" -eq 1 ]; then
-    note "OpenCode: would register cyberdeck in $OPENCODE_CONFIG"
+# --- macOS desktop clients --------------------------------------------------------
+PLATFORM="$(uname -s)"
+if [ "$PLATFORM" = "Darwin" ]; then
+  if command -v open >/dev/null 2>&1 && open -Ra "ChatGPT" >/dev/null 2>&1; then
+    note "ChatGPT Desktop: uses the Codex registration in $CODEX_CONFIG; restart the app"
   else
-    node -e '
-      const { mkdirSync, readFileSync, writeFileSync, existsSync } = require("node:fs");
-      const path = require("node:path");
-      const file = process.argv[1];
-      const command = process.argv[2];
-      const configPath = process.argv[3];
-      mkdirSync(path.dirname(file), { recursive: true });
-      const settings = existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : {};
-      settings.mcp = settings.mcp ?? {};
-      if (!settings.mcp.cyberdeck) {
-        settings.mcp.cyberdeck = {
-          type: "local",
-          command: ["node", command, "--config", configPath],
-          enabled: true,
-        };
-        writeFileSync(file, JSON.stringify(settings, null, 2) + "\n");
-      }
-    ' "$OPENCODE_CONFIG" "$APP_DIR/bin/cyberdeck-mcp.mjs" "$CONFIG_PATH"
-    note "OpenCode: registered cyberdeck in $OPENCODE_CONFIG"
+    note "ChatGPT Desktop not found; Codex config is ready if the app is installed later"
+  fi
+
+  if command -v open >/dev/null 2>&1 && open -Ra "Claude" >/dev/null 2>&1; then
+    command -v zip >/dev/null 2>&1 || die "zip is required to build the Claude Desktop MCP bundle on macOS. Install the Xcode command-line tools and re-run."
+    MCPB_STAGE="$CYBERDECK_HOME/.mcpb-stage"
+    MCPB_PATH="$CYBERDECK_HOME/cyberdeck.mcpb"
+    if [ "$DRY_RUN" -eq 1 ]; then
+      note "Claude Desktop: would build $MCPB_PATH and open its installation dialog"
+    else
+      rm -rf "$MCPB_STAGE"
+      mkdir -p "$MCPB_STAGE"
+      cp "$APP_DIR/desktop/claude-manifest.json" "$MCPB_STAGE/manifest.json"
+      cp -R "$APP_DIR/bin" "$APP_DIR/src" "$APP_DIR/desktop" "$MCPB_STAGE/"
+      cp "$APP_DIR/cyberdeck.config.json" "$APP_DIR/cyberdeck.config.schema.json" \
+        "$APP_DIR/package.json" "$APP_DIR/LICENSE" "$MCPB_STAGE/"
+      rm -f "$MCPB_PATH"
+      (cd "$MCPB_STAGE" && zip -qr "$MCPB_PATH" .)
+      rm -rf "$MCPB_STAGE"
+      if open "$MCPB_PATH"; then
+        note "Claude Desktop: opened $MCPB_PATH; select a workspace root and approve installation in Claude"
+        if [ -r /dev/tty ]; then
+          printf "Complete the Cyberdeck install in Claude Desktop, then press Return here: " >/dev/tty
+          IFS= read -r _ </dev/tty || true
+        else
+          note "ACTION REQUIRED: complete the open Claude Desktop installation dialog before using Cyberdeck"
+        fi
+      else
+        note "ACTION REQUIRED: Claude Desktop could not open $MCPB_PATH; install it from Settings > Extensions > Advanced settings > Install Extension"
+      fi
+    fi
+  else
+    note "Claude Desktop not found; skipped its MCP bundle (the installer never installs desktop apps)"
   fi
 else
-  note "OpenCode not found; skipped (re-run after installing it)"
-fi
-
-# --- Register with Grok Build ------------------------------------------------------
-if command -v grok >/dev/null 2>&1; then
-  if grok mcp list 2>/dev/null | grep -q 'cyberdeck'; then
-    note "Grok Build: cyberdeck already registered; left untouched"
-  elif [ "$DRY_RUN" -eq 1 ]; then
-    note "Grok Build: would register cyberdeck via grok mcp add"
-  elif grok mcp add cyberdeck -- node "$APP_DIR/bin/cyberdeck-mcp.mjs" --config "$CONFIG_PATH"; then
-    note "Grok Build: registered cyberdeck via grok mcp add"
-  else
-    note "Grok Build: grok mcp add failed; skipped"
-  fi
-elif [ -d "$HOME/.grok" ]; then
-  GROK_CONFIG="$HOME/.grok/config.toml"
-  if [ -f "$GROK_CONFIG" ] && grep -q '^\[mcp_servers\.cyberdeck\]' "$GROK_CONFIG"; then
-    note "Grok Build: cyberdeck already registered; left untouched"
-  elif [ "$DRY_RUN" -eq 1 ]; then
-    note "Grok Build: would append [mcp_servers.cyberdeck] to $GROK_CONFIG"
-  else
-    mkdir -p "$HOME/.grok"
-    cat >>"$GROK_CONFIG" <<EOF
-
-# Added by cyberdeck install.sh.
-[mcp_servers.cyberdeck]
-command = "node"
-args = ["$APP_DIR/bin/cyberdeck-mcp.mjs", "--config", "$CONFIG_PATH"]
-startup_timeout_sec = 10
-tool_timeout_sec = 1900
-EOF
-    note "Grok Build: appended cyberdeck block to $GROK_CONFIG"
-  fi
-else
-  note "Grok Build not found; skipped (re-run after installing it)"
+  note "macOS desktop integrations skipped on $PLATFORM; no desktop app detection or installation was attempted"
 fi
 
 # --- Verify -------------------------------------------------------------------------

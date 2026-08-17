@@ -1,0 +1,57 @@
+{
+  "manifest_version": "0.3",
+  "name": "cyberdeck",
+  "display_name": "Cyberdeck",
+  "version": "0.1.0",
+  "description": "Delegate typed research and implementation tasks to Pi through OpenRouter.",
+  "author": {
+    "name": "cmacdev"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/cmacdev/cyberdeck.git"
+  },
+  "license": "MIT",
+  "privacy_policies": [
+    "https://openrouter.ai/privacy"
+  ],
+  "server": {
+    "type": "node",
+    "entry_point": "desktop/claude-server.mjs",
+    "mcp_config": {
+      "command": "node",
+      "args": [
+        "${__dirname}/desktop/claude-server.mjs"
+      ],
+      "env": {
+        "CYBERDECK_WORKSPACE_ROOT": "${user_config.workspace_root}"
+      }
+    }
+  },
+  "tools": [
+    {
+      "name": "research",
+      "description": "Delegate a read-only research task."
+    },
+    {
+      "name": "implement",
+      "description": "Delegate a write-capable implementation task."
+    }
+  ],
+  "compatibility": {
+    "platforms": [
+      "darwin"
+    ],
+    "runtimes": {
+      "node": ">=20.0.0"
+    }
+  },
+  "user_config": {
+    "workspace_root": {
+      "type": "directory",
+      "title": "Workspace root",
+      "description": "Choose a project directory or a parent containing projects. The filesystem root and home directory are refused.",
+      "required": true
+    }
+  }
+}

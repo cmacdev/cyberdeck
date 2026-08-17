@@ -1,6 +1,6 @@
-# Copy this block into ~/.codex/config.toml and replace both absolute paths.
+# Copy this block into ~/.codex/config.toml and replace all absolute paths.
 [mcp_servers.cyberdeck]
-command = "node"
+command = "/absolute/path/to/node"
 args = [
   "/absolute/path/to/cyberdeck/bin/cyberdeck-mcp.mjs",
   "--config",
@@ -12,7 +12,6 @@ cwd = "/absolute/path/to/your/workspace-parent"
 enabled = true
 required = false
 enabled_tools = ["research", "implement"]
-env_vars = ["OPENROUTER_API_KEY"]
 startup_timeout_sec = 10
 tool_timeout_sec = 1900
 default_tools_approval_mode = "writes"
