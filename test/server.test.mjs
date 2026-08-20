@@ -329,7 +329,7 @@ test("working_directory must be an existing absolute directory inside a root", a
     ["relative", "must be an absolute path"],
     [path.join(fixture.workspace, "missing"), "does not exist"],
     [fixture.contextFile, "is not a directory"],
-    [fixture.outside, "outside configured workspace roots"],
+    [fixture.outside, "outside configured workspace roots.*edit workspaceRoots in .*config.*restart"],
     [path.join(fixture.workspace, "x".repeat(4096)), "cannot exceed 4096"],
   ];
   for (const [workingDirectory, expected] of cases) {

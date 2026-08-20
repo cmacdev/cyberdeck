@@ -99,7 +99,9 @@ async function canonicalInsideRoot(value, config, label, expectDirectory) {
     inputFail(`${label} is not a regular file: ${value}`);
   }
   if (!config.workspaceRoots.some((root) => isWithinRoot(canonical, root))) {
-    inputFail(`${label} is outside configured workspace roots: ${canonical}`);
+    inputFail(
+      `${label} is outside configured workspace roots: ${canonical}. Roots: ${config.workspaceRoots.join(", ")}. To widen them, edit workspaceRoots in ${config.configPath} and restart the MCP client.`,
+    );
   }
   return canonical;
 }
