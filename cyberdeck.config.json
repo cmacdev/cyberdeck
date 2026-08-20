@@ -1,0 +1,97 @@
+{
+  "$schema": "./cyberdeck.config.schema.json",
+  "provider": "openrouter",
+  "workspaceRoots": [
+    "@cwd"
+  ],
+  "artifactDirectory": "./.cyberdeck/runs",
+  "pi": {
+    "command": "pi",
+    "arguments": [],
+    "stateDirectory": null,
+    "trustProjectFiles": false,
+    "loadContextFiles": true
+  },
+  "limits": {
+    "maxConcurrentRuns": 4,
+    "defaultTimeoutSeconds": 600,
+    "maxTimeoutSeconds": 1800,
+    "defaultReturnCharacters": 3000,
+    "maxReturnCharacters": 8000,
+    "maxArtifactBytes": 10485760,
+    "maxTaskCharacters": 50000,
+    "maxContextFiles": 20
+  },
+  "profiles": {
+    "research": {
+      "modelPatterns": [
+        "deepseek/deepseek-v4-flash-0731",
+        "moonshotai/kimi-k3",
+        "x-ai/grok-4.6"
+      ],
+      "defaultRole": "mechanical",
+      "defaultThinking": "high",
+      "maxThinking": "max",
+      "tools": [
+        "read",
+        "grep",
+        "find",
+        "ls"
+      ],
+      "promptPreamble": "Investigate and report evidence. Do not modify files or external state. Clearly separate facts, inferences, and unknowns.",
+      "roles": {
+        "mechanical": {
+          "model": "deepseek/deepseek-v4-flash-0731",
+          "when": "Cheap read-only survey, inventory, grep, and citation.",
+          "defaultThinking": "medium",
+          "maxThinking": "high"
+        },
+        "verify": {
+          "model": "moonshotai/kimi-k3",
+          "when": "Judgment-bearing independent check of work or a claimed result.",
+          "defaultThinking": "high",
+          "maxThinking": "max"
+        },
+        "adversarial": {
+          "model": "x-ai/grok-4.6",
+          "when": "Attack a plan, find holes, or run a hostile review.",
+          "defaultThinking": "high",
+          "maxThinking": "max"
+        }
+      }
+    },
+    "implementation": {
+      "modelPatterns": [
+        "moonshotai/kimi-k3",
+        "x-ai/grok-4.6"
+      ],
+      "defaultRole": "intellectual",
+      "defaultThinking": "high",
+      "maxThinking": "max",
+      "tools": [
+        "read",
+        "grep",
+        "find",
+        "ls",
+        "bash",
+        "edit",
+        "write"
+      ],
+      "promptPreamble": "Implement only the requested change inside the supplied workspace. Preserve unrelated work, verify proportionately, and report changed files and checks.",
+      "roles": {
+        "gritty": {
+          "model": "moonshotai/kimi-k3",
+          "when": "Ambiguous or cross-cutting work; thorough, states assumptions.",
+          "defaultThinking": "high",
+          "maxThinking": "max"
+        },
+        "intellectual": {
+          "model": "x-ai/grok-4.6",
+          "when": "Bounded, spec-exact, reviewable diffs; do not expand scope.",
+          "defaultThinking": "high",
+          "maxThinking": "max"
+        }
+      }
+    }
+  }
+}

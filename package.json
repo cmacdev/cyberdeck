@@ -1,0 +1,27 @@
+{
+  "name": "cyberdeck-mcp",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "author": "cmacdev",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cmacdev/cyberdeck.git"
+  },
+  "homepage": "https://github.com/cmacdev/cyberdeck#readme",
+  "bugs": {
+    "url": "https://github.com/cmacdev/cyberdeck/issues"
+  },
+  "type": "module",
+  "description": "A thin, typed MCP delegation boundary around Pi and OpenRouter.",
+  "bin": {
+    "cyberdeck-mcp": "./bin/cyberdeck-mcp.mjs"
+  },
+  "scripts": {
+    "inspect": "node ./bin/cyberdeck-mcp.mjs --inspect",
+    "test": "node --test test/*.test.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
