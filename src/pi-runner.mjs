@@ -484,6 +484,7 @@ export async function runPi(profileName, rawInput, config, signal) {
     execution.promptError ||
     execution.artifactError ||
     execution.exitCode !== 0 ||
+    execution.state.usage.turns === 0 ||
     execution.state.stopReason === "error" ||
     execution.state.stopReason === "aborted"
   ) {
@@ -502,6 +503,8 @@ export async function runPi(profileName, rawInput, config, signal) {
       rawError = `Prompt delivery to Pi failed: ${execution.promptError.message}`;
     } else if (execution.artifactError) {
       rawError = `Artifact write failed: ${execution.artifactError.message}`;
+    } else if (execution.exitCode === 0 && execution.state.usage.turns === 0) {
+      rawError = "Pi exited without an assistant completion.";
     } else {
       rawError =
         execution.state.errorMessage ||

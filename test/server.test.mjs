@@ -439,6 +439,18 @@ test("malformed and non-event Pi output cannot crash the server", async (t) => {
   assert.equal((await client.request("ping")).resultType, "complete");
 });
 
+test("a zero exit without an assistant completion fails the run", async (t) => {
+  const { fixture, client } = await serverFor(t);
+  for (const task of ["FAKE_NO_EVENTS", "FAKE_NOISE FAKE_NO_EVENTS"]) {
+    const result = await call(client, "research", callArguments(fixture, { task }));
+    assert.equal(result.isError, true);
+    assert.equal(result.structuredContent.status, "failed");
+    assert.equal(result.structuredContent.exit_code, 0);
+    assert.equal(result.structuredContent.usage.turns, 0);
+    assert.equal(result.structuredContent.error, "Pi exited without an assistant completion.");
+  }
+});
+
 test("a missing Pi binary is a failed run with a null exit code and artifacts", async (t) => {
   const { fixture, client } = await serverFor(t, { pi: { command: "cyberdeck-no-such-binary", arguments: [] } });
   const result = await call(client, "research", callArguments(fixture));
