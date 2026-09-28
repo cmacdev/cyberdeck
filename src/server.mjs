@@ -309,6 +309,10 @@ export function createServer(config, { input = process.stdin, output = process.s
 
     const controller = new AbortController();
     const key = requestKey(id);
+    if (activeCalls.has(key)) {
+      send(errorResponse(id, new RpcError(-32600, "Invalid Request: id is already active.")));
+      return;
+    }
     activeCalls.set(key, controller);
     try {
       const result = await handleRequest(message, controller.signal);

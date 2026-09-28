@@ -550,6 +550,24 @@ test("a cancellation that lands during validation stops the call before anything
   await assert.rejects(readdir(fixture.artifactDirectory), "no run directory was created");
 });
 
+test("a duplicate request ID leaves the original run cancellable", async (t) => {
+  const { fixture, client } = await serverFor(t);
+  const id = 82;
+  client.send({
+    jsonrpc: "2.0", id, method: "tools/call",
+    params: { name: "research", arguments: callArguments(fixture, { task: "FAKE_HANG" }) },
+  });
+  await awaitRunEvents(fixture, /fake-session/);
+  client.send({ jsonrpc: "2.0", id: String(id), method: "ping" });
+  assert.ok((await client.waitForMessage((message) => message.id === String(id), 1000))?.result);
+  client.send({ jsonrpc: "2.0", id, method: "ping" });
+  const duplicate = await client.waitForMessage((message) => message.id === id, 1000);
+  assert.equal(duplicate?.error?.code, -32600);
+  client.notify("notifications/cancelled", { requestId: id });
+  assert.equal((await awaitRunResult(fixture)).status, "cancelled");
+  assert.equal((await call(client, "research", callArguments(fixture))).structuredContent.ok, true);
+});
+
 test("a cancellation after Pi exited but before its pipes closed does not relabel the run", async (t) => {
   const { fixture, client } = await serverFor(t);
   const id = 79;
