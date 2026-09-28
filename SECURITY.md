@@ -9,6 +9,7 @@ It enforces the following before Pi starts:
 - The research profile cannot contain Pi's built-in `bash`, `edit`, or `write` tools.
 - Concurrent runs, thinking, timeout, task size, attachment count, path lengths, returned text, artifact size, and stdio line length are capped.
 - Pi runs without a saved conversation (`--no-session`) and without implicitly trusting project-local Pi extensions (`--no-approve`) by default.
+- The shipped `pi.arguments` disables automatic extension and skill discovery (`--no-extensions --no-skills`). Existing installations keep their configured arguments; apply these flags using the [policy update procedure](install-helper.md#update). Explicit extension paths still load.
 - The task text is passed to Pi on stdin, never as a command-line argument, so it does not appear in process listings or command-line audit logs. Model, tool list, prompt preamble, and context-file paths remain command-line arguments.
 - OpenRouter credentials are inherited from the process environment or Pi's own auth store. They are not MCP arguments or run-record fields.
 - When installed by `install.sh`, Pi's OpenRouter routing is pinned to zero-data-retention endpoints that do not train on submitted data (`zdr: true`, `data_collection: "deny"` in `~/.pi/agent/models.json`). This applies to every Pi OpenRouter request on the machine; a model without such an endpoint fails rather than falling back.
@@ -19,7 +20,7 @@ It does **not** enforce these boundaries:
 - Pi has no built-in sandbox. Every Pi tool, including the read-only built-ins `read`, `grep`, `find`, and `ls`, runs with the Pi process's OS permissions and can reach any path that user can read, such as `~/.pi/agent/auth.json` or `~/.ssh`; a shell tool or extension can also write there.
 - Pi inherits the MCP server's entire environment, which is the environment of the client that launched it. Any secret in that environment is readable by Pi's tools and by the model driving them.
 - `workspaceRoots` validates Cyberdeck's inputs; it cannot prevent an enabled Pi shell or custom extension from reaching other host paths.
-- A custom tool on the research allowlist may still have side effects. Cyberdeck only knows that Pi's three mutating built-ins are forbidden there.
+- An explicitly loaded extension can execute code at startup, intercept built-in tools, and have side effects even under research. Custom tools may also have side effects. Cyberdeck only knows that Pi's three mutating built-ins are forbidden on the research allowlist.
 - If Pi ignores SIGTERM and has to be SIGKILLed, shell processes it started may outlive it.
 - The calling MCP client approves the outer call. Nested Pi tool calls are not separately visible in that client's approval UI.
 - Repository context, source files, tool output, and web results can contain prompt injection.

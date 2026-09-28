@@ -7,8 +7,10 @@ import {
   MODERN_META,
   argumentValue,
   callArguments,
+  fakePiPath,
   isProcessAlive,
   makeFixture,
+  packageDirectory,
   sleep,
   startServer,
 } from "./helpers.mjs";
@@ -396,6 +398,57 @@ test("pi flags follow the configuration", async (t) => {
   assert.ok(!invocation.argv.includes("--no-approve"));
   assert.ok(invocation.argv.includes("--no-context-files"));
   assert.equal(invocation.piStateDirectory, null, "no PI_CODING_AGENT_DIR when stateDirectory is null");
+});
+
+test("the shipped policy disables extension and skill discovery for both tools", async (t) => {
+  const shipped = JSON.parse(await readFile(path.join(packageDirectory, "cyberdeck.config.json"), "utf8"));
+  const { fixture, client } = await serverFor(t, {
+    pi: { arguments: [fakePiPath, ...shipped.pi.arguments] },
+  });
+  for (const tool of ["research", "implement"]) {
+    const result = await call(client, tool, callArguments(fixture));
+    assert.equal(result.isError, false);
+    const invocation = JSON.parse(result.structuredContent.final_output);
+    assert.ok(invocation.argv.includes("--no-extensions"));
+    assert.ok(invocation.argv.includes("--no-skills"));
+    const request = JSON.parse(await readFile(result.structuredContent.artifacts.request, "utf8"));
+    assert.deepEqual(request.pi.prefixArguments, [fakePiPath, ...shipped.pi.arguments]);
+  }
+});
+
+test("an answer cut short by the model token limit fails with its partial output", async (t) => {
+  const { fixture, client } = await serverFor(t);
+  const result = await call(client, "research", callArguments(fixture, { task: "FAKE_TOKEN_LIMIT" }));
+  const structured = result.structuredContent;
+  assert.equal(result.isError, true);
+  assert.equal(structured.ok, false);
+  assert.equal(structured.status, "failed");
+  assert.equal(structured.exit_code, 0);
+  assert.equal(structured.final_output, "Partial answer.");
+  assert.equal(structured.output_truncated, true);
+  assert.match(structured.error, /output token limit.*incomplete/);
+  assert.deepEqual(await onlyRunResult(fixture), structured);
+});
+
+test("a completed answer after a token limit is successful", async (t) => {
+  const { fixture, client } = await serverFor(t);
+  const result = await call(client, "research", callArguments(fixture, { task: "FAKE_TOKEN_LIMIT_RECOVERED" }));
+  assert.equal(result.isError, false);
+  assert.equal(result.structuredContent.final_output, "Complete answer.");
+  assert.equal(result.structuredContent.output_truncated, false);
+  assert.equal(result.structuredContent.error, null);
+  assert.equal(result.structuredContent.usage.turns, 2);
+});
+
+test("a crash after a token limit preserves the process failure", async (t) => {
+  const { fixture, client } = await serverFor(t);
+  const result = await call(client, "research", callArguments(fixture, { task: "FAKE_TOKEN_LIMIT_CRASH" }));
+  assert.equal(result.isError, true);
+  assert.equal(result.structuredContent.status, "failed");
+  assert.equal(result.structuredContent.exit_code, 3);
+  assert.equal(result.structuredContent.final_output, "Partial answer.");
+  assert.equal(result.structuredContent.output_truncated, true);
+  assert.match(result.structuredContent.error, /fake pi crashed after partial output/);
 });
 
 test("a Pi error message becomes a failed result", async (t) => {

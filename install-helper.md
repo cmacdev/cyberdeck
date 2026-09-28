@@ -26,7 +26,6 @@ Every stop prints its cause; apply the fix and re-run the same command.
 | `cannot update ~/.claude/settings.json` | Make the file valid JSON and writable. Unrelated settings are preserved. |
 | `cannot update ~/.codex/config.toml` | Make the file writable. Unrelated content is preserved. |
 | `cannot update ~/.pi/agent/models.json` | Make it valid JSON (strip comments) and writable, then re-run. Unrelated content is preserved. |
-| `cannot update ~/.pi/agent/settings.json` | Make it valid JSON and writable, then re-run. Unrelated content is preserved. |
 | `cannot update ~/.pi/agent/auth.json` | Make it valid JSON and writable, then re-run. Other providers' credentials are preserved. |
 | `cyberdeck.config.json is missing from <dir>` | The checkout is incomplete. Restore it (the piped installer clones a complete one), then re-run. |
 | `the bundled deck skill is missing` | Restore or update the Cyberdeck checkout (piped installs update `~/.cyberdeck/app` automatically). |
@@ -52,8 +51,8 @@ and expect `final_output` containing `READY`.
 
 ## Manual client setup
 
-Manual setups skip the installer's zero-data-retention routing pin and Pi defaults; run the
-installer once for those, or add them yourself (paths in the README locations table).
+Manual setups skip the installer's zero-data-retention routing pin; run the installer once
+for it, or add it yourself (path in the README locations table).
 
 Any MCP client: `node /abs/cyberdeck/bin/cyberdeck-mcp.mjs --config /abs/cyberdeck.config.json`,
 started inside a project so `@cwd` resolves there.
@@ -93,11 +92,31 @@ implicitly: when the found version differs from the tested one the installer say
 it; add `--pin-pi` to move Pi to the tested version. Delegated runs suppress Pi's update
 notices by design; interactive `pi` shows them itself. Restart clients afterwards.
 
+To adopt new model routes or Pi flags, update the installed policy separately:
+
+1. Save a backup of `~/.cyberdeck/cyberdeck.config.json`.
+2. Compare it with `~/.cyberdeck/app/cyberdeck.config.json` (checkout installs: use
+   that checkout's config). Apply the desired changes to `profiles` and
+   `pi.arguments`. A model change must update both its role binding and the
+   profile's `modelPatterns`. Preserve custom routes, executable paths, workspace
+   roots, limits, and artifact locations.
+3. Validate with `node ~/.cyberdeck/app/bin/cyberdeck-mcp.mjs --config
+   ~/.cyberdeck/cyberdeck.config.json --inspect`, using the checkout path when
+   applicable. Restart the client and read `cyberdeck://catalog` and
+   `cyberdeck://profiles` to confirm the effective policy.
+
+If validation fails, restore the backup before restarting. Installing a new app
+version does not replace an existing policy.
+
 ## Uninstall
 
 `install.sh --uninstall` removes the Claude Code registration and both permission rules, the
 `[mcp_servers.cyberdeck]` block, both managed `deck` skills,
-the installer-set Pi default model and telemetry opt-out (marked `cyberdeckDefaults`; settings you chose yourself stay),
 and `~/.cyberdeck` (only when it is a Cyberdeck home); everything else in those files is preserved. On a Mac it reminds you to remove
 the extension in Claude Desktop. Pi, its auth store, and OpenRouter routing stay:
 `npm uninstall -g @earendil-works/pi-coding-agent` and `rm -rf ~/.pi` remove them.
+
+Pi's `settings.json` is left unchanged, including defaults written by older Cyberdeck
+installers. To remove those defaults, edit that file yourself; remove `cyberdeckDefaults`
+and only the `defaultProvider`, `defaultModel`, `defaultThinkingLevel`, or
+`enableInstallTelemetry` values you no longer want.

@@ -60,12 +60,16 @@ must match the profile's `modelPatterns`. Policy lives in `cyberdeck.config.json
 | --- | --- | --- | --- |
 | `research` | `mechanical` (default) | `deepseek/deepseek-v4-flash-0731` | Cheap survey, inventory, grep, citation |
 | `research` | `verify` | `moonshotai/kimi-k3` | Judgment-bearing independent check |
-| `research` | `adversarial` | `x-ai/grok-4.6` | Attack a plan, find holes, hostile review |
-| `implement` | `intellectual` (default) | `x-ai/grok-4.6` | Bounded, spec-exact, reviewable diffs |
+| `research` | `adversarial` | `x-ai/grok-4.7` | Attack a plan, find holes, hostile review |
+| `implement` | `intellectual` (default) | `x-ai/grok-4.7` | Bounded, spec-exact, reviewable diffs |
 | `implement` | `gritty` | `moonshotai/kimi-k3` | Ambiguous or cross-cutting; thorough |
 
-Pi runs stateless (`--no-session`), ignores project-local Pi extensions unless
-`pi.trustProjectFiles` is `true`, reuses your user-level Pi auth and settings while
+For independent verification, choose a different model family from the implementer using
+`cyberdeck://catalog`. Different role names can still select the same model.
+
+Pi runs stateless (`--no-session`). The shipped `pi.arguments` disables extension and skill
+discovery (`--no-extensions --no-skills`); existing installs can adopt these flags using
+the [policy update procedure](install-helper.md#update). Pi reuses your user-level auth and settings while
 `pi.stateDirectory` is `null`, and loads `AGENTS.md`/`CLAUDE.md` from the working directory while
 `pi.loadContextFiles` is `true`.
 
@@ -75,9 +79,8 @@ Pi runs stateless (`--no-session`), ignores project-local Pi extensions unless
   OpenRouter and from there to the model bound to the chosen role, restricted to
   zero-data-retention endpoints that do not train on your data (the routing pin below).
 - Cyberdeck itself makes no network calls and disables Pi's update check and install telemetry
-  for every run (`PI_SKIP_VERSION_CHECK=1`, `PI_TELEMETRY=0`); the installer also turns Pi's
-  install telemetry off for interactive use. Pi's tools reach whatever the task uses, such as a
-  `web_search` extension or `bash` under `implement`.
+  for every run (`PI_SKIP_VERSION_CHECK=1`, `PI_TELEMETRY=0`). Pi's tools reach whatever the
+  task uses, such as an explicitly loaded `web_search` extension or `bash` under `implement`.
 - The installer contacts github.com (clone) and the npm registry (Pi, only when absent).
 - The OpenRouter key lives only in Pi's auth store, never in Cyberdeck files or run artifacts.
 
@@ -114,12 +117,13 @@ exactly these locations:
 | `~/.claude/skills/deck`, `~/.codex/skills/deck` | The `deck` skill with a `.cyberdeck-managed` marker; an unmanaged skill of that name is never overwritten |
 | `~/.pi/agent/auth.json` | OpenRouter key, only when Pi had none |
 | `~/.pi/agent/models.json` | OpenRouter routing pin `zdr: true`, `data_collection: "deny"` for all Pi OpenRouter calls; other content preserved |
-| `~/.pi/agent/settings.json` | Interactive default `x-ai/grok-4.6` at thinking `high` plus install telemetry off, only when no default model is configured; Cyberdeck calls always pass model and thinking explicitly |
 | npm's global directory (`npm prefix -g`) | Pi, only when `pi` was absent; `--uninstall` leaves it |
 | `~/.cyberdeck/cyberdeck.mcpb` | macOS with Claude Desktop installed: MCP bundle; the installer opens it and Claude asks for a workspace root and approval |
 | `~/.cyberdeck/claude-desktop.config.json`, `~/.cyberdeck/claude-desktop-runs` | Written by the Claude Desktop launcher on each start: the installed policy scoped to the chosen workspace root, and its artifacts |
 
 Stops and their fixes, manual client setup, and uninstall: [install-helper.md](install-helper.md).
+Install and uninstall leave Pi's interactive settings unchanged. Cyberdeck supplies its model,
+thinking, and telemetry settings per run.
 Restart the client afterwards. Invoke the skill with `/deck …` (Claude Code), `$deck …` (Codex
 CLI), or `@deck …` (ChatGPT Desktop); it picks `research` or `implement` and a role, and calls
 Cyberdeck with the absolute project directory.
@@ -133,6 +137,12 @@ built-in or extension tool names), `workspaceRoots` (`@cwd` is the server proces
 directory; `/` and `$HOME` are refused), and `limits`. `npm run inspect` prints the resolved
 schemas, annotations, paths, catalog, and limits; it never prints a key.
 
+To load a trusted extension, add `"--extension", "/absolute/path/to/extension.ts"` to
+`pi.arguments` and its tool names to the required profile's `tools`. Explicit extension
+paths still load with `--no-extensions`. `pi.trustProjectFiles` controls project trust
+(`--approve` or `--no-approve`); it does not enable discovery. Extensions run with your
+OS permissions and can have side effects even when their tools are not selected.
+
 ## Calls, results, artifacts
 
 Both tools take `task` and an absolute `working_directory` inside a configured root, plus
@@ -143,6 +153,10 @@ id, role, actual model, Pi tool policy, `final_output` (the assistant's final te
 `return_characters`), usage, `error`, and artifact paths. A client-cancelled request
 (`notifications/cancelled`) terminates Pi and gets no response; its `result.json` records
 `status: "cancelled"`.
+
+An answer cut short by the model's output token limit returns `status: "failed"` and
+`output_truncated: true`, retaining any partial text. A completed answer shortened only
+by `return_characters` remains successful and also sets `output_truncated: true`.
 
 Each accepted call writes `<artifactDirectory>/<run-id>/` with `request.json` (effective request
 and policy), `events.jsonl` (Pi's event stream, capped together with stderr at

@@ -23,7 +23,6 @@ const DOC_PATH_VARIABLES = {
   "~/.claude/settings.json": "$CLAUDE_SETTINGS",
   "~/.codex/config.toml": "$CODEX_CONFIG",
   "~/.pi/agent/models.json": "$PI_MODELS",
-  "~/.pi/agent/settings.json": "$PI_SETTINGS",
   "~/.pi/agent/auth.json": "$PI_AGENT_DIR/auth.json",
 };
 

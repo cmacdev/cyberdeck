@@ -69,7 +69,6 @@ CLAUDE_SETTINGS="$HOME/.claude/settings.json"
 CODEX_CONFIG="$HOME/.codex/config.toml"
 PI_AGENT_DIR="${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}"
 PI_MODELS="$PI_AGENT_DIR/models.json"
-PI_SETTINGS="$PI_AGENT_DIR/settings.json"
 ATOMIC_WRITE='
   const { existsSync, realpathSync, renameSync, statSync, writeFileSync } = require("node:fs");
   const atomicWrite = (file, text, mode) => {
@@ -87,12 +86,6 @@ claude_registered_in_file() {
 }
 codex_registered() {
   [ -f "$CODEX_CONFIG" ] && grep -qE '^[[:space:]]*\[mcp_servers\.cyberdeck\]' "$CODEX_CONFIG"
-}
-pi_default_set() {
-  [ -f "$PI_SETTINGS" ] && node -e '
-    const settings = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8"));
-    process.exit(settings.defaultModel || settings.defaultProvider || settings.defaultThinkingLevel ? 0 : 1);
-  ' "$PI_SETTINGS" 2>/dev/null
 }
 zdr_pinned() {
   [ -f "$PI_MODELS" ] && node -e '
@@ -190,28 +183,6 @@ if [ "$UNINSTALL" -eq 1 ]; then
   }
   remove_deck_skill "Claude Code" "$HOME/.claude/skills/deck"
   remove_deck_skill "Codex and ChatGPT Desktop" "$HOME/.codex/skills/deck"
-
-  if [ -f "$PI_SETTINGS" ] && grep -q '"cyberdeckDefaults": true' "$PI_SETTINGS"; then
-    if [ "$DRY_RUN" -eq 1 ]; then
-      note "Pi: would remove the installer-set default model from $PI_SETTINGS"
-    else
-      PI_SETTINGS="$PI_SETTINGS" node -e "$ATOMIC_WRITE"'
-        const { readFileSync, unlinkSync } = require("node:fs");
-        const file = process.env.PI_SETTINGS;
-        const settings = JSON.parse(readFileSync(file, "utf8"));
-        delete settings.defaultProvider;
-        delete settings.defaultModel;
-        delete settings.defaultThinkingLevel;
-        if (settings.enableInstallTelemetry === false) delete settings.enableInstallTelemetry;
-        delete settings.cyberdeckDefaults;
-        if (Object.keys(settings).length) atomicWrite(file, JSON.stringify(settings, null, 2) + "\n", 0o600);
-        else unlinkSync(file);
-      ' || die "cannot update $PI_SETTINGS. Make it valid JSON and writable, then re-run."
-      note "Pi: removed the installer-set default model from $PI_SETTINGS (other settings preserved)"
-    fi
-  else
-    note "Pi: no installer-set default model; nothing to remove"
-  fi
 
   if [ "$(uname -s)" = "Darwin" ] && [ -e "$CYBERDECK_HOME/cyberdeck.mcpb" ]; then
     note "ACTION REQUIRED: remove the Cyberdeck extension in Claude Desktop under Settings > Extensions (this script never edits Claude Desktop's app state)"
@@ -387,38 +358,8 @@ else
   note "Pi: pinned OpenRouter routing to zero-data-retention endpoints (zdr true, data_collection deny) in $PI_MODELS"
 fi
 
-if [ -f "$APP_DIR/cyberdeck.config.json" ]; then
-  PI_DEFAULT_MODEL="$(node -p '
-    const p = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")).profiles.implementation;
-    p.roles[p.defaultRole].model' "$APP_DIR/cyberdeck.config.json")"
-  PI_DEFAULT_THINKING="$(node -p '
-    const p = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")).profiles.implementation;
-    p.roles[p.defaultRole].defaultThinking ?? p.defaultThinking' "$APP_DIR/cyberdeck.config.json")"
-elif [ "$DRY_RUN" -eq 1 ]; then
-  PI_DEFAULT_MODEL="the implementation default role's model"
-  PI_DEFAULT_THINKING="its default"
-else
+if [ ! -f "$APP_DIR/cyberdeck.config.json" ] && [ "$DRY_RUN" -ne 1 ]; then
   die "cyberdeck.config.json is missing from $APP_DIR. Restore the checkout (the piped installer clones a complete one), then re-run."
-fi
-if pi_default_set; then
-  note "Pi: a default model is already configured in $PI_SETTINGS; left untouched"
-elif [ "$DRY_RUN" -eq 1 ]; then
-  note "Pi: would set the interactive default to $PI_DEFAULT_MODEL (thinking $PI_DEFAULT_THINKING) and disable install telemetry in $PI_SETTINGS"
-else
-  PI_SETTINGS="$PI_SETTINGS" PI_DEFAULT_MODEL="$PI_DEFAULT_MODEL" PI_DEFAULT_THINKING="$PI_DEFAULT_THINKING" node -e "$ATOMIC_WRITE"'
-    const { mkdirSync, readFileSync } = require("node:fs");
-    const path = require("node:path");
-    const file = process.env.PI_SETTINGS;
-    mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
-    const settings = existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : {};
-    settings.defaultProvider = "openrouter";
-    settings.defaultModel = process.env.PI_DEFAULT_MODEL;
-    settings.defaultThinkingLevel = process.env.PI_DEFAULT_THINKING;
-    settings.enableInstallTelemetry ??= false;
-    settings.cyberdeckDefaults = true;
-    atomicWrite(file, JSON.stringify(settings, null, 2) + "\n", 0o600);
-  ' || die "cannot update $PI_SETTINGS. Make it valid JSON and writable, then re-run."
-  note "Pi: set the interactive default to $PI_DEFAULT_MODEL (thinking $PI_DEFAULT_THINKING) and disabled install telemetry in $PI_SETTINGS"
 fi
 
 NODE_COMMAND="$(node -p 'process.execPath')"

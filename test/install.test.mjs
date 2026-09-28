@@ -137,12 +137,8 @@ test("an install without client binaries still writes the default Claude and Cod
   assert.match(codex, /^\[mcp_servers\.cyberdeck\]$/m);
   const models = JSON.parse(await readFile(path.join(fixture.root, ".pi", "agent", "models.json"), "utf8"));
   assert.deepEqual(models.providers.openrouter.compat.openRouterRouting, { zdr: true, data_collection: "deny" });
-  const piSettings = JSON.parse(await readFile(path.join(fixture.root, ".pi", "agent", "settings.json"), "utf8"));
-  assert.equal(piSettings.defaultProvider, "openrouter");
-  assert.equal(piSettings.defaultModel, "x-ai/grok-4.6");
-  assert.equal(piSettings.defaultThinkingLevel, "high");
-  assert.equal(piSettings.cyberdeckDefaults, true);
-  assert.equal(piSettings.enableInstallTelemetry, false);
+  const piSettingsPath = path.join(fixture.root, ".pi", "agent", "settings.json");
+  assert.equal(existsSync(piSettingsPath), false);
   for (const target of [
     path.join(fixture.root, ".claude", "skills", "deck"),
     path.join(fixture.root, ".codex", "skills", "deck"),
@@ -155,6 +151,7 @@ test("an install without client binaries still writes the default Claude and Cod
   }
   await execFileAsync("bash", ["install.sh", "--uninstall"], { cwd: packageDirectory, env });
   assert.deepEqual(JSON.parse(await readFile(path.join(fixture.root, ".pi", "agent", "models.json"), "utf8")), models);
+  assert.equal(existsSync(piSettingsPath), false);
 });
 
 test("the uninstall reverses the install and preserves unrelated configuration", async (t) => {
@@ -189,7 +186,7 @@ test("the uninstall reverses the install and preserves unrelated configuration",
   const userRouting = { providers: { openrouter: { compat: { openRouterRouting: { order: ["xai"], zdr: true, data_collection: "deny" } } } } };
   await writeFile(modelsPath, `${JSON.stringify(userRouting, null, 2)}\n`);
   const piSettingsPath = path.join(fixture.root, ".pi", "agent", "settings.json");
-  const userSettings = { defaultModel: "user-choice", theme: "dark" };
+  const userSettings = { theme: "dark" };
   await writeFile(piSettingsPath, `${JSON.stringify(userSettings, null, 2)}\n`);
 
   await execFileAsync("bash", ["install.sh"], { cwd: packageDirectory, env });
@@ -197,7 +194,16 @@ test("the uninstall reverses the install and preserves unrelated configuration",
     JSON.parse(await readFile(modelsPath, "utf8")).providers.openrouter.compat.openRouterRouting,
     { order: ["xai"], zdr: true, data_collection: "deny" },
   );
-  assert.deepEqual(JSON.parse(await readFile(piSettingsPath, "utf8")), userSettings, "an existing default model is never overwritten");
+  assert.deepEqual(JSON.parse(await readFile(piSettingsPath, "utf8")), userSettings, "install preserves settings without a default model");
+  const legacySettings = {
+    ...userSettings,
+    cyberdeckDefaults: true,
+    defaultProvider: "openrouter",
+    defaultModel: "user-choice",
+    defaultThinkingLevel: "low",
+    enableInstallTelemetry: false,
+  };
+  await writeFile(piSettingsPath, `${JSON.stringify(legacySettings, null, 2)}\n`);
   const { stdout, stderr } = await execFileAsync("bash", ["install.sh", "--uninstall"], {
     cwd: packageDirectory,
     env,
@@ -216,7 +222,7 @@ test("the uninstall reverses the install and preserves unrelated configuration",
   assert.match(codex, /^model = "keep-me"$/m);
   assert.doesNotMatch(codex, /cyberdeck/);
   assert.deepEqual(JSON.parse(await readFile(modelsPath, "utf8")), userRouting);
-  assert.deepEqual(JSON.parse(await readFile(piSettingsPath, "utf8")), userSettings, "user settings survive uninstall untouched");
+  assert.deepEqual(JSON.parse(await readFile(piSettingsPath, "utf8")), legacySettings, "uninstall preserves settings marked by an older installer");
   for (const target of [".claude/skills/deck", ".codex/skills/deck", ".cyberdeck"]) {
     assert.equal(existsSync(path.join(fixture.root, target)), false, `${target} should be gone`);
   }
