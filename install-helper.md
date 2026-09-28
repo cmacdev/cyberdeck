@@ -3,7 +3,7 @@
 Read this when `install.sh` stops, when a client does not show the tools afterwards, when you set a
 client up by hand, or to uninstall. Agents repairing an install: every stop prints its cause; find
 it in the table, apply the fix, and re-run the same command. Never use sudo, and never ask for or
-handle the OpenRouter key; hand that prompt to the user.
+handle API keys; hand those prompts to the user.
 
 ## If the installer stops
 
@@ -19,6 +19,9 @@ Every stop prints its cause; apply the fix and re-run the same command.
 | `cannot reach <repo>` | Network, DNS, or URL problem: check connectivity, or set `CYBERDECK_REPO_URL` to a reachable clone URL. |
 | `<dir> exists and is not a Cyberdeck home` | `CYBERDECK_HOME` points at an unrelated directory. Point it at a new or empty one, or unset it to use `~/.cyberdeck`. |
 | `no terminal available for the API key prompt` | Run in an interactive terminal (the prompt reads `/dev/tty`), or set `OPENROUTER_API_KEY` for the installer. Agents: hand this step to the user; never ask for or handle the key. |
+| `unknown provider` | Re-run with `--provider openrouter` or `--provider venice`. |
+| `no terminal available for the Venice key prompt` / `empty Venice key` | Set `VENICE_API_KEY` or run interactively and enter an inference key with Private Only selected in Venice API settings. |
+| `Venice setup failed` | Fix the reported API, model, or JSON error. Use a valid inference key with Private Only selected in Venice API settings. The installer requires an explicit service refusal of a synthetic anonymous text request and private, available, tool-capable role models. Remove conflicting Venice auth/endpoint overrides from `models.json`. |
 | `empty API key` / `Pi does not report OpenRouter credentials as ready` | Nothing was stored, or Pi rejected the key. Check `pi auth check --provider openrouter`; re-run to be prompted again. |
 | `pi was installed or detected but cannot now be found on PATH` | Add npm's global `bin` directory to the current shell's `PATH` and re-run. |
 | `configured Pi command … is not executable` | Set `pi.command` in the named configuration file to the detected executable path printed in the error, or restore your custom executable, then re-run. |
@@ -37,7 +40,7 @@ Every stop prints its cause; apply the fix and re-run the same command.
 | `verification failed: the resolved configuration does not load` | `node ~/.cyberdeck/app/bin/cyberdeck-mcp.mjs --config ~/.cyberdeck/cyberdeck.config.json --inspect` prints the error; fix `~/.cyberdeck/cyberdeck.config.json` and re-run. |
 | `pi <found> found; left untouched (tested with <pinned>…)` (not a stop) | A different Pi version stays. `--pin-pi` installs the tested version, up or down. |
 | Claude Desktop says `ENOENT … package.mcpb` (not a stop) | The bundle was moved before approval. `open ~/.cyberdeck/cyberdeck.mcpb` and approve again. |
-| OpenRouter says no endpoints match your data policy (not a stop) | The installer pinned Pi to zero-data-retention endpoints in `~/.pi/agent/models.json`; that model has none. Pick another model, or remove `zdr`/`data_collection` from the pin to allow it. |
+| OpenRouter says no endpoints match your data policy (not a stop) | Pick a model with a ZDR endpoint; keep `zdr` and `data_collection` enforced. |
 
 ## After a successful run
 
@@ -51,8 +54,9 @@ and expect `final_output` containing `READY`.
 
 ## Manual client setup
 
-Manual setups skip the installer's zero-data-retention routing pin; run the installer once
-for it, or add it yourself (path in the README locations table).
+Run the installer for the selected provider's privacy controls before setting up a client manually.
+Use `--provider venice` for a restricted inference key and Pi model registration, or
+`--provider openrouter` for the ZDR routing pin.
 
 Any MCP client: `node /abs/cyberdeck/bin/cyberdeck-mcp.mjs --config /abs/cyberdeck.config.json`,
 started inside a project so `@cwd` resolves there.
@@ -87,7 +91,8 @@ Install Extension).
 
 Re-run the same install command. It resets `~/.cyberdeck/app` to the published version
 (local changes there are discarded — develop in a checkout instead) and preserves
-`~/.cyberdeck/cyberdeck.config.json` and everything under `~/.pi`. Pi is never updated
+custom policy settings and unrelated Pi settings. The selected provider's privacy controls are
+reapplied; Venice reuses its saved inference key, checks privacy enforcement, and refreshes model metadata. Pi is never updated
 implicitly: when the found version differs from the tested one the installer says so and keeps
 it; add `--pin-pi` to move Pi to the tested version. Delegated runs suppress Pi's update
 notices by design; interactive `pi` shows them itself. Restart clients afterwards.
@@ -113,7 +118,8 @@ version does not replace an existing policy.
 `install.sh --uninstall` removes the Claude Code registration and both permission rules, the
 `[mcp_servers.cyberdeck]` block, both managed `deck` skills,
 and `~/.cyberdeck` (only when it is a Cyberdeck home); everything else in those files is preserved. On a Mac it reminds you to remove
-the extension in Claude Desktop. Pi, its auth store, and OpenRouter routing stay:
+the extension in Claude Desktop. Pi, its auth store, and provider settings stay. Revoke unused
+Venice keys in Venice API settings separately.
 `npm uninstall -g @earendil-works/pi-coding-agent` and `rm -rf ~/.pi` remove them.
 
 Pi's `settings.json` is left unchanged, including defaults written by older Cyberdeck

@@ -7,6 +7,7 @@ import test from "node:test";
 import { promisify } from "node:util";
 
 import { makeFixture, packageDirectory } from "./helpers.mjs";
+import { inferenceKey } from "../fixtures/venice-api.mjs";
 
 const execFileAsync = promisify(execFile);
 const testSystemPath = [
@@ -26,6 +27,115 @@ function runWithClosedInput(command, args, options) {
     child.on("close", (code) => resolve({ code, stdout, stderr }));
   });
 }
+
+test("codex-only install and uninstall never invoke or restore Claude integrations", async (t) => {
+  const fixture = await makeFixture(t);
+  const bin = path.join(fixture.root, "bin");
+  await mkdir(bin);
+  const invoked = path.join(fixture.root, "claude-invoked");
+  for (const [name, script] of [
+    ["pi", '#!/bin/sh\nif [ "$1" = "--version" ]; then echo "pi 0.84.2"; else echo ready; fi\n'],
+    ["uname", "#!/bin/sh\necho Darwin\n"],
+    ["claude", `#!/bin/sh\ntouch '${invoked}'\nexit 1\n`],
+    ["open", `#!/bin/sh\nif [ "$2" = "Claude" ]; then touch '${invoked}'; fi\nexit 1\n`],
+  ]) {
+    await writeFile(path.join(bin, name), script);
+    await chmod(path.join(bin, name), 0o755);
+  }
+  const env = { ...process.env, HOME: fixture.root, CYBERDECK_HOME: path.join(fixture.root, ".cyberdeck"), PI_CODING_AGENT_DIR: path.join(fixture.root, ".pi/agent"), PATH: `${bin}:${testSystemPath}` };
+  await execFileAsync("bash", ["install.sh", "--codex-only", "--provider", "openrouter"], { cwd: packageDirectory, env });
+  assert.equal(existsSync(path.join(fixture.root, ".claude.json")), false);
+  assert.equal(existsSync(path.join(fixture.root, ".claude/skills/deck")), false);
+  assert.ok(existsSync(path.join(fixture.root, ".codex/skills/deck/SKILL.md")));
+  await writeFile(path.join(fixture.root, ".claude.json"), JSON.stringify({ mcpServers: { cyberdeck: {}, other: {} } }));
+  await execFileAsync("bash", ["install.sh", "--codex-only", "--uninstall"], { cwd: packageDirectory, env });
+  assert.deepEqual(JSON.parse(await readFile(path.join(fixture.root, ".claude.json"), "utf8")).mcpServers, { other: {} });
+  assert.equal(existsSync(invoked), false);
+});
+
+test("Venice install, repeat install, and provider switching preserve custom policy and credentials", async (t) => {
+  const fixture = await makeFixture(t);
+  const bin = path.join(fixture.root, "bin");
+  await mkdir(bin);
+  for (const [name, script] of [
+    ["pi", '#!/bin/sh\nif [ "$1" = "--version" ]; then echo "pi 0.84.2"; else echo ready; fi\n'],
+    ["uname", "#!/bin/sh\necho Linux\n"],
+  ]) {
+    await writeFile(path.join(bin, name), script);
+    await chmod(path.join(bin, name), 0o755);
+  }
+  const preload = path.join(fixture.root, "fetch.mjs");
+  await writeFile(preload, `import { veniceFixture } from ${JSON.stringify(path.join(packageDirectory, "fixtures/venice-api.mjs"))}; globalThis.fetch = veniceFixture().fetch;\n`);
+  const cyberdeckHome = path.join(fixture.root, ".cyberdeck");
+  const agentDirectory = path.join(fixture.root, "custom-pi-state");
+  const env = {
+    ...process.env, HOME: fixture.root, CYBERDECK_HOME: cyberdeckHome,
+    PI_CODING_AGENT_DIR: agentDirectory, VENICE_API_KEY: inferenceKey,
+    PATH: `${bin}:${testSystemPath}`, NODE_OPTIONS: `--import=${preload}`,
+  };
+  const dry = await execFileAsync("bash", ["install.sh", "--provider", "venice", "--dry-run"], { cwd: packageDirectory, env });
+  assert.match(dry.stdout, /blocks anonymous/);
+  assert.equal(existsSync(agentDirectory), false);
+  await writeFile(preload, `import { veniceFixture } from ${JSON.stringify(path.join(packageDirectory, "fixtures/venice-api.mjs"))}; globalThis.fetch = veniceFixture({ failPath: "/chat/completions" }).fetch;\n`);
+  const failed = await runWithClosedInput("bash", ["install.sh", "--provider", "venice"], { cwd: packageDirectory, env });
+  assert.equal(failed.code, 1);
+  assert.match(failed.stderr, /Venice setup failed/);
+  assert.equal(existsSync(path.join(agentDirectory, "auth.json")), false);
+  assert.equal(existsSync(path.join(cyberdeckHome, "cyberdeck.config.json")), false);
+  await writeFile(preload, `import { veniceFixture } from ${JSON.stringify(path.join(packageDirectory, "fixtures/venice-api.mjs"))}; globalThis.fetch = veniceFixture().fetch;\n`);
+  const installed = await execFileAsync("bash", ["install.sh", "--provider", "venice"], { cwd: packageDirectory, env });
+  assert.match(installed.stdout, /verified: resolved config loads/);
+  assert.ok(!installed.stdout.includes(inferenceKey));
+  assert.ok(!installed.stderr.includes(inferenceKey));
+  const configPath = path.join(cyberdeckHome, "cyberdeck.config.json");
+  const policy = JSON.parse(await readFile(configPath, "utf8"));
+  assert.equal(policy.provider, "venice");
+  assert.equal(policy.pi.stateDirectory, agentDirectory);
+  policy.limits.maxTaskCharacters = 1234;
+  await writeFile(configPath, JSON.stringify(policy));
+  const authPath = path.join(agentDirectory, "auth.json");
+  const auth = JSON.parse(await readFile(authPath, "utf8"));
+  assert.deepEqual(auth.venice, { type: "api_key", key: inferenceKey });
+  const repeated = await execFileAsync("bash", ["install.sh"], { cwd: packageDirectory, env });
+  assert.match(repeated.stdout, /provider: Venice/);
+  assert.equal(JSON.parse(await readFile(configPath, "utf8")).limits.maxTaskCharacters, 1234);
+  await execFileAsync("bash", ["install.sh", "--provider", "openrouter"], { cwd: packageDirectory, env });
+  assert.equal(JSON.parse(await readFile(configPath, "utf8")).provider, "openrouter");
+  assert.deepEqual(JSON.parse(await readFile(authPath, "utf8")), auth);
+  await execFileAsync("bash", ["install.sh", "--provider", "venice"], { cwd: packageDirectory, env });
+  assert.equal(JSON.parse(await readFile(configPath, "utf8")).provider, "venice");
+  const models = JSON.parse(await readFile(path.join(agentDirectory, "models.json"), "utf8"));
+  assert.equal(models.providers.openrouter.compat.openRouterRouting.zdr, true);
+  assert.equal(models.providers.venice.models.length, 3);
+});
+
+test("OpenRouter model and payload overrides cannot weaken the installer ZDR pin", async (t) => {
+  const fixture = await makeFixture(t);
+  const bin = path.join(fixture.root, "bin");
+  await mkdir(bin);
+  for (const [name, script] of [
+    ["pi", '#!/bin/sh\nif [ "$1" = "--version" ]; then echo "pi 0.84.2"; else echo ready; fi\n'],
+    ["uname", "#!/bin/sh\necho Linux\n"],
+  ]) {
+    await writeFile(path.join(bin, name), script);
+    await chmod(path.join(bin, name), 0o755);
+  }
+  const agentDirectory = path.join(fixture.root, ".pi/agent");
+  await mkdir(agentDirectory, { recursive: true });
+  const file = path.join(agentDirectory, "models.json");
+  await writeFile(file, JSON.stringify({ providers: { openrouter: {
+    compat: { openRouterRouting: { zdr: true, data_collection: "deny" } },
+    modelOverrides: { example: { compat: { openRouterRouting: { zdr: false, order: ["keep"] } } } },
+    models: [{ id: "custom", samplingParams: { provider: null } }],
+  } } }));
+  await execFileAsync("bash", ["install.sh", "--provider", "openrouter"], {
+    cwd: packageDirectory,
+    env: { ...process.env, HOME: fixture.root, CYBERDECK_HOME: path.join(fixture.root, ".cyberdeck"), PI_CODING_AGENT_DIR: agentDirectory, PATH: `${bin}:${testSystemPath}` },
+  });
+  const provider = JSON.parse(await readFile(file, "utf8")).providers.openrouter;
+  assert.deepEqual(provider.modelOverrides.example.compat.openRouterRouting, { zdr: true, order: ["keep"], data_collection: "deny" });
+  assert.deepEqual(provider.models[0].samplingParams.provider, { zdr: true, data_collection: "deny" });
+});
 
 test("the Linux dry-run configures only Claude Code and the default Codex location", async (t) => {
   const fixture = await makeFixture(t);

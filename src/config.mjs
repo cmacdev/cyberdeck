@@ -252,6 +252,7 @@ export async function loadConfig(configPath) {
     new Set([
       "$schema",
       "provider",
+      "modelAliases",
       "workspaceRoots",
       "artifactDirectory",
       "pi",
@@ -259,8 +260,17 @@ export async function loadConfig(configPath) {
       "profiles",
     ]),
   );
-  if (raw.provider !== "openrouter") {
-    fail('provider must be exactly "openrouter".');
+  if (!["openrouter", "venice"].includes(raw.provider)) {
+    fail('provider must be "openrouter" or "venice".');
+  }
+  const modelAliases = expectObject(raw.modelAliases ?? {}, "modelAliases");
+  expectKnownKeys(modelAliases, "modelAliases", new Set(["openrouter", "venice"]));
+  for (const [provider, aliases] of Object.entries(modelAliases)) {
+    expectObject(aliases, `modelAliases.${provider}`);
+    for (const [model, target] of Object.entries(aliases)) {
+      expectString(target, `modelAliases.${provider}.${model}`);
+      if (!model || model.length > 200 || target.length > 200) fail("modelAliases IDs must contain 1 to 200 characters.");
+    }
   }
   const configDirectory = path.dirname(absoluteConfigPath);
   const workspaceRootValues = expectStringArray(raw.workspaceRoots, "workspaceRoots", {
@@ -378,13 +388,19 @@ export async function loadConfig(configPath) {
   const profilesRaw = expectObject(raw.profiles, "profiles");
   expectKnownKeys(profilesRaw, "profiles", new Set(PROFILE_NAMES));
   const profiles = Object.fromEntries(
-    PROFILE_NAMES.map((name) => [name, parseProfile(profilesRaw[name], name)]),
+    PROFILE_NAMES.map((name) => {
+      const profile = parseProfile(profilesRaw[name], name);
+      const aliases = modelAliases[raw.provider] ?? {};
+      profile.modelPatterns = profile.modelPatterns.map((model) => aliases[model] ?? model);
+      for (const role of Object.values(profile.roles)) role.model = aliases[role.model] ?? role.model;
+      return [name, profile];
+    }),
   );
 
   return {
     configPath: absoluteConfigPath,
     configDirectory,
-    provider: "openrouter",
+    provider: raw.provider,
     workspaceRoots: [...new Set(workspaceRoots)],
     artifactDirectory: resolvePath(
       raw.artifactDirectory,

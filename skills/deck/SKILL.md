@@ -1,6 +1,6 @@
 ---
 name: deck
-description: Delegate a task through Cyberdeck's research or implement MCP tool. Use when the user invokes deck or asks for Cyberdeck. Do not use when required data cannot be sent to OpenRouter.
+description: Delegate a task through Cyberdeck's research or implement MCP tool. Use when the user invokes deck or asks for Cyberdeck. Do not use when required data cannot be sent to the configured provider.
 ---
 
 # Deck

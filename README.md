@@ -3,7 +3,7 @@
 │                                                                            │
 │  TYPE..............................................local stdio MCP server  │
 │  TOOLS...........................research (read-only) · implement (write)  │
-│  ENGINE...........................................Pi on OpenRouter models  │
+│  ENGINE........................................Pi on OpenRouter or Venice  │
 │  CLIENTS.......Claude Code · Codex CLI · ChatGPT Desktop · Claude Desktop  │
 │  DEPENDENCIES...........................................................0  │
 │  INVOKE............................................................./deck  │
@@ -19,7 +19,7 @@
 
 This is a cyberdeck that jacks your daily driver into the agent matrix. The initial goal is for the deck to help you spend less on tokens by using the right models for each job. It packages an opinionated protocol that makes it easy for your primary agent to make the right decisions (so you do not have to think about them).
 
-Run install, **add an [openrouter](https://openrouter.ai/) API key**, and tell Claude or ChatGPT to use `/deck` for subagents. It should work with any harness including Pi (which is what the deck installs and uses itself).
+Run install, **choose [OpenRouter](https://openrouter.ai/) or [Venice](https://venice.ai/)**, and tell Claude or ChatGPT to use `/deck` for subagents. Both require an API key. It should work with any harness including Pi (which is what the deck installs and uses itself).
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/cmacdev/cyberdeck/master/install.sh | bash
@@ -36,7 +36,7 @@ For Claude Desktop, a dialog will open that asks for a **workspace root**. Don't
 
 # Agents
 
-Cyberdeck is a small local MCP server (stdio, no npm dependencies) that turns Pi + OpenRouter
+Cyberdeck is a small local MCP server (stdio, no npm dependencies) that turns Pi + OpenRouter or Venice
 into a typed delegation boundary for the coding agent you already use. The calling agent decides
 when to delegate; Cyberdeck enforces the visible policy: read-only `research` versus
 write-capable `implement`, bound models, workspace roots, limits, and artifacts. Pi is the inner
@@ -64,6 +64,10 @@ must match the profile's `modelPatterns`. Policy lives in `cyberdeck.config.json
 | `implement` | `intellectual` (default) | `x-ai/grok-4.7` | Bounded, spec-exact, reviewable diffs |
 | `implement` | `gritty` | `moonshotai/kimi-k3` | Ambiguous or cross-cutting; thorough |
 
+The table shows OpenRouter IDs. With Venice, `modelAliases.venice` in the same config resolves
+them to `deepseek-v4-flash-0731`, `kimi-k3`, and `grok-4-7`. The catalog and model overrides
+use the selected provider's IDs; role names and permissions stay the same.
+
 For independent verification, choose a different model family from the implementer using
 `cyberdeck://catalog`. Different role names can still select the same model.
 
@@ -76,19 +80,21 @@ the [policy update procedure](install-helper.md#update). Pi reuses your user-lev
 ## What leaves your machine
 
 - The task, constraints, attached `context_files`, and whatever Pi's enabled tools read go to
-  OpenRouter and from there to the model bound to the chosen role, restricted to
-  zero-data-retention endpoints that do not train on your data (the routing pin below).
+  the selected provider. OpenRouter requests require ZDR endpoints; Venice uses an inference
+  key that blocks anonymous text models. The installer verifies service-side enforcement.
 - Cyberdeck itself makes no network calls and disables Pi's update check and install telemetry
   for every run (`PI_SKIP_VERSION_CHECK=1`, `PI_TELEMETRY=0`). Pi's tools reach whatever the
   task uses, such as an explicitly loaded `web_search` extension or `bash` under `implement`.
-- The installer contacts github.com (clone) and the npm registry (Pi, only when absent).
-- The OpenRouter key lives only in Pi's auth store, never in Cyberdeck files or run artifacts.
+- The installer contacts github.com (clone), the npm registry (Pi, only when absent), and
+  Venice's API when configuring Venice (authentication, model metadata, and a one-token
+  privacy probe containing only `1`; an unrestricted key may incur a minimal inference charge).
+- Inference keys live in Pi's auth store.
 
 Read [SECURITY.md](SECURITY.md) for the enforced and unenforced boundaries before unattended `implement`.
 
 ## Requirements
 
-macOS or Linux, Node.js 20 or newer, git (piped install), and an OpenRouter key. No Windows
+macOS or Linux, Node.js 20 or newer, git (piped install), and a provider API key. No Windows
 support; open an issue if you want it. Pi 0.84.2 is installed with
 `npm install -g` only when `pi` is absent (`--pin-pi` forces that version); an existing Pi is
 never touched. Everything else is zero-dependency Node.
@@ -97,26 +103,46 @@ never touched. Everything else is zero-dependency Node.
 
 Run the command at the top. Append `-s -- --dry-run` to print the plan without performing any
 of the writes below (the pi and claude probes may still create those tools' own state files); `-s -- --uninstall`
-removes Cyberdeck while leaving Pi, its credentials, and OpenRouter routing. Re-running the
+removes Cyberdeck while leaving Pi, its credentials, and provider settings. Re-running the
 same command is also the update path (`--pin-pi` moves Pi to the tested version).
-From a checkout, `bash install.sh [--dry-run|--uninstall]` registers the
+From a checkout, `bash install.sh [--provider openrouter|venice] [--dry-run|--uninstall]` registers the
 checkout itself.
 
-The key is taken from `OPENROUTER_API_KEY`, else prompted for with hidden input, and stored only
-when Pi has no OpenRouter credentials. The installer never uses sudo, is idempotent, and writes
+Interactive installs ask for a provider, defaulting to the installed choice or OpenRouter.
+Use `--provider venice` or `--provider openrouter` to choose without a prompt.
+Add `--codex-only` to install only for Codex/ChatGPT and avoid invoking Claude's CLI or app.
+The same flag on uninstall removes existing file-based registrations without invoking Claude.
+
+OpenRouter takes `OPENROUTER_API_KEY`, otherwise prompts with hidden input, and preserves
+existing Pi credentials. Venice also uses an ordinary inference key: the saved Pi key,
+`VENICE_API_KEY`, or a hidden terminal prompt. Set its privacy to **Private Only** in
+[Venice API settings](https://venice.ai/settings/api) first. Each install verifies that an
+anonymous text request is rejected; no admin key or key-management access is needed.
+
+Venice uses Pi's `openai-completions` API at `https://api.venice.ai/api/v1`, discovers the
+configured models' limits and capabilities, and requires private models with tool calling.
+Its native [`PRIVATE_ONLY` key restriction](https://docs.venice.ai/api-reference/endpoint/api_keys/update)
+rejects anonymous models across modalities (`PRIVATE_TEXT` also protects Pi text requests);
+[Private means zero retention](https://docs.venice.ai/overview/privacy).
+OpenRouter keeps [`zdr: true` and `data_collection: "deny"`](https://openrouter.ai/docs/guides/features/zdr),
+including model-specific routing overrides. Privacy failures stop installation; there is no
+fallback to a weaker policy. ZDR covers provider inference; local run artifacts and external
+tools have their own retention behavior.
+
+The installer never uses sudo, is idempotent, and writes
 exactly these locations:
 
 | Path | Content |
 | --- | --- |
 | `~/.cyberdeck/app` | Clone of this repo, reset to the published version on re-runs (piped install only) |
-| `~/.cyberdeck/cyberdeck.config.json` | Installed policy: the shipped config with the absolute Pi path and `~/.cyberdeck/runs` as artifact directory (mode 600, preserved on re-run) |
+| `~/.cyberdeck/cyberdeck.config.json` | Installed policy with the selected provider, absolute Pi executable/state paths and run directory (mode 600; custom settings preserved on re-run) |
 | `~/.cyberdeck/cyberdeck.config.schema.json`, `~/.cyberdeck/pi-command` | Schema copy for editors; Pi path for Claude Desktop |
 | `~/.claude.json` | User-scope `cyberdeck` stdio server (`claude mcp add` when the CLI is present) |
 | `~/.claude/settings.json` | `permissions.allow: mcp__cyberdeck__research`, `permissions.ask: mcp__cyberdeck__implement` |
 | `~/.codex/config.toml` | `[mcp_servers.cyberdeck]` block (research `auto`, implement `prompt`); shared by Codex CLI and ChatGPT Desktop |
 | `~/.claude/skills/deck`, `~/.codex/skills/deck` | The `deck` skill with a `.cyberdeck-managed` marker; an unmanaged skill of that name is never overwritten |
-| `~/.pi/agent/auth.json` | OpenRouter key, only when Pi had none |
-| `~/.pi/agent/models.json` | OpenRouter routing pin `zdr: true`, `data_collection: "deny"` for all Pi OpenRouter calls; other content preserved |
+| `~/.pi/agent/auth.json` | Selected provider's inference key; unrelated credentials preserved |
+| `~/.pi/agent/models.json` | OpenRouter ZDR routing on every install; Venice's endpoint and configured model metadata when selected; other providers preserved |
 | npm's global directory (`npm prefix -g`) | Pi, only when `pi` was absent; `--uninstall` leaves it |
 | `~/.cyberdeck/cyberdeck.mcpb` | macOS with Claude Desktop installed: MCP bundle; the installer opens it and Claude asks for a workspace root and approval |
 | `~/.cyberdeck/claude-desktop.config.json`, `~/.cyberdeck/claude-desktop-runs` | Written by the Claude Desktop launcher on each start: the installed policy scoped to the chosen workspace root, and its artifacts |

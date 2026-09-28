@@ -18,8 +18,17 @@
       "type": "string"
     },
     "provider": {
-      "const": "openrouter",
-      "description": "Pi provider name. Only openrouter is supported."
+      "enum": ["openrouter", "venice"],
+      "description": "Pi provider name."
+    },
+    "modelAliases": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Optional exact model ID translations applied to roles and modelPatterns for the selected provider.",
+      "properties": {
+        "openrouter": { "$ref": "#/$defs/modelAliases" },
+        "venice": { "$ref": "#/$defs/modelAliases" }
+      }
     },
     "workspaceRoots": {
       "type": "array",
@@ -107,6 +116,10 @@
     }
   },
   "$defs": {
+    "modelAliases": {
+      "type": "object",
+      "additionalProperties": { "type": "string", "minLength": 1, "maxLength": 200 }
+    },
     "thinking": {
       "enum": [
         "off",
@@ -132,7 +145,7 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 200,
-          "description": "OpenRouter model ID; must match the profile's modelPatterns."
+          "description": "Model ID; must match the profile's modelPatterns before provider alias translation."
         },
         "when": {
           "type": "string",

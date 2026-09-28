@@ -3,7 +3,7 @@
   "name": "cyberdeck",
   "display_name": "Cyberdeck",
   "version": "0.1.0",
-  "description": "Delegate typed research and implementation tasks to Pi through OpenRouter.",
+  "description": "Delegate typed research and implementation tasks to Pi through OpenRouter or Venice.",
   "author": {
     "name": "cmacdev"
   },
@@ -13,7 +13,8 @@
   },
   "license": "MIT",
   "privacy_policies": [
-    "https://openrouter.ai/privacy"
+    "https://openrouter.ai/privacy",
+    "https://venice.ai/privacy"
   ],
   "server": {
     "type": "node",

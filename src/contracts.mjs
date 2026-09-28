@@ -29,7 +29,7 @@ export function buildServerInstructions(config) {
     "Stay in the calling harness. Delegate through these two tools; do not spawn Pi yourself.",
     `research is read-only. Default role ${research.defaultRole}. Roles: ${roleLines(research).join(" | ")}`,
     `implement may write or run shell. Default role ${implementation.defaultRole}. Roles: ${roleLines(implementation).join(" | ")}`,
-    "Omit model to use the role default. Override model only when the task needs a listed OpenRouter ID. Results are capped; read cyberdeck://catalog for the role table.",
+    "Omit model to use the role default. Override model only when the task needs a listed provider model ID. Results are capped; read cyberdeck://catalog for the role table.",
   ].join(" ");
 }
 
@@ -51,7 +51,7 @@ function modelProperty(profile) {
     maxLength: MAX_MODEL_CHARACTERS,
     ...(hasWildcard || listed.length === 0 ? {} : { enum: listed }),
     description:
-      "Optional OpenRouter model ID. Omit to use the selected role's model. Must match this profile's modelPatterns.",
+      "Optional provider model ID. Omit to use the selected role's model. Must match this profile's modelPatterns.",
   };
 }
 
@@ -203,7 +203,7 @@ export function buildTools(config) {
     {
       name: "research",
       title: "Delegate read-only research",
-      description: `Read-only Pi/OpenRouter agent. Cannot receive bash/edit/write. Pick a role or accept default ${research.defaultRole}. ${roleLines(research).join(" ")}`,
+      description: `Read-only Pi agent. Cannot receive bash/edit/write. Pick a role or accept default ${research.defaultRole}. ${roleLines(research).join(" ")}`,
       inputSchema: inputSchema(config, "research"),
       outputSchema: OUTPUT_SCHEMA,
       annotations: {
@@ -216,7 +216,7 @@ export function buildTools(config) {
     {
       name: "implement",
       title: "Delegate implementation",
-      description: `Write/shell-capable Pi/OpenRouter coding agent. Use only when workspace changes are authorized. Pick a role or accept default ${implementation.defaultRole}. ${roleLines(implementation).join(" ")}`,
+      description: `Write/shell-capable Pi coding agent. Use only when workspace changes are authorized. Pick a role or accept default ${implementation.defaultRole}. ${roleLines(implementation).join(" ")}`,
       inputSchema: inputSchema(config, "implementation"),
       outputSchema: OUTPUT_SCHEMA,
       annotations: {
