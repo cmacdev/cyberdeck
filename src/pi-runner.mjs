@@ -477,6 +477,7 @@ export async function runPi(profileName, rawInput, config, signal) {
   });
   const durationMs = Date.now() - started;
 
+  const modelOutputTruncated = execution.state.stopReason === "length";
   let status = "succeeded";
   if (execution.terminationReason) status = execution.terminationReason;
   else if (
@@ -485,6 +486,7 @@ export async function runPi(profileName, rawInput, config, signal) {
     execution.artifactError ||
     execution.exitCode !== 0 ||
     execution.state.usage.turns === 0 ||
+    modelOutputTruncated ||
     execution.state.stopReason === "error" ||
     execution.state.stopReason === "aborted"
   ) {
@@ -505,6 +507,8 @@ export async function runPi(profileName, rawInput, config, signal) {
       rawError = `Artifact write failed: ${execution.artifactError.message}`;
     } else if (execution.exitCode === 0 && execution.state.usage.turns === 0) {
       rawError = "Pi exited without an assistant completion.";
+    } else if (execution.exitCode === 0 && modelOutputTruncated) {
+      rawError = "Pi reached the model's output token limit; the answer is incomplete.";
     } else {
       rawError =
         execution.state.errorMessage ||
@@ -527,7 +531,7 @@ export async function runPi(profileName, rawInput, config, signal) {
     exit_code: execution.exitCode,
     duration_ms: durationMs,
     final_output: returned.value,
-    output_truncated: returned.truncated,
+    output_truncated: returned.truncated || modelOutputTruncated,
     usage: execution.state.usage,
     artifacts: paths,
     error,

@@ -15,7 +15,9 @@ Delegate once initially through `cyberdeck`; do not perform the task first.
 5. Choose `mechanical` for surveys or exact checks, `verify` for independent
    judgment, `adversarial` for hostile review, `intellectual` for bounded edits,
    or `gritty` for ambiguous work. Judgment-bearing verification must use
-   `verify` or `adversarial`.
+   `verify` or `adversarial`. Inspect `cyberdeck://catalog` and choose a different
+   model family from the implementer. If an explicit model choice prevents this,
+   report that the check is not independent.
 6. Preserve explicit role, model, thinking, timeout, context, and return limits.
 7. Unless requested, constrain `implement`: no commit, push, tag, publication,
    or unrelated external mutation; stop and report rather than guess.

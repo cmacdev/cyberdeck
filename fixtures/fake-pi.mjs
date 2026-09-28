@@ -61,6 +61,15 @@ if (has("FAKE_STDERR_ONLY")) {
     messageEnd([{ type: "text", text: "flooded" }]);
   } else if (has("FAKE_SILENT")) {
     messageEnd([]);
+  } else if (has("FAKE_TOKEN_LIMIT")) {
+    messageEnd([{ type: "text", text: "Partial answer." }], { stopReason: "length" });
+    if (has("FAKE_TOKEN_LIMIT_RECOVERED")) {
+      messageEnd([{ type: "text", text: "Complete answer." }]);
+    }
+    if (has("FAKE_TOKEN_LIMIT_CRASH")) {
+      process.stderr.write("fake pi crashed after partial output\n");
+      process.exitCode = 3;
+    }
   } else if (has("FAKE_LINGER") || has("FAKE_HOLD_PIPE")) {
     messageEnd([{ type: "text", text: "lingered" }]);
     const descendant = spawn(process.execPath, ["-e", `setTimeout(() => {}, ${has("FAKE_HOLD_PIPE") ? 30000 : 1500})`], {
