@@ -609,15 +609,20 @@ async function hangingChild(t, signalName) {
   }
   assert.ok(pid, "fake pi did not start");
   assert.ok(isProcessAlive(pid));
-  if (signalName) client.child.kill(signalName);
+  if (signalName === "stdout") {
+    client.child.stdout.destroy();
+    client.send({ jsonrpc: "2.0", id: 2, method: "ping" });
+  } else if (signalName) client.child.kill(signalName);
   else client.endInput();
   const exit = await client.waitForExit(4000);
   assert.ok(exit, "server did not exit");
+  assert.equal(exit.code, 0, client.stderr());
   assert.equal(isProcessAlive(pid), false, "pi child survived server shutdown");
   assert.equal(await client.waitForMessage((message) => message.id === 1, 0), null);
 }
 
 test("stdin EOF stops reading and terminates running Pi before exiting", (t) => hangingChild(t, null));
+test("a broken stdout pipe terminates running Pi before exiting", (t) => hangingChild(t, "stdout"));
 
 for (const signalName of ["SIGTERM", "SIGINT", "SIGHUP"]) {
   test(`${signalName} terminates running Pi before exiting`, (t) => hangingChild(t, signalName));
