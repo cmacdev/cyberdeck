@@ -219,7 +219,7 @@ function updateFromEvent(state, line) {
   } catch {
     return;
   }
-  if (event.type !== "message_end" || !event.message) return;
+  if (event?.type !== "message_end" || !event.message) return;
   const message = event.message;
   if (message.role !== "assistant") return;
   const text = extractAssistantText(message);

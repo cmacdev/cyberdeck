@@ -15,6 +15,7 @@ for await (const chunk of process.stdin) prompt += chunk;
 const has = (keyword) => prompt.includes(keyword);
 
 if (process.env.FAKE_PI_PIDFILE) writeFileSync(process.env.FAKE_PI_PIDFILE, String(process.pid));
+if (has("FAKE_NOISE")) process.stdout.write("null\n42\ntrue\n[]\n{}\nnot json\n");
 
 const emit = (event) => process.stdout.write(`${JSON.stringify(event)}\n`);
 const messageEnd = (content, extra = {}) =>
