@@ -194,16 +194,19 @@ export function createServer(config, { input = process.stdin, output = process.s
 
   const requestKey = (id) => `${typeof id}:${String(id)}`;
   const send = (message) => {
+    if (output.destroyed || output.writableEnded) return;
     const line = `${JSON.stringify(message)}\n`;
     writeQueue = writeQueue
       .then(
         () =>
           new Promise((resolve, reject) => {
+            if (output.destroyed || output.writableEnded) return resolve();
             output.write(line, "utf8", (error) => (error ? reject(error) : resolve()));
           }),
       )
       .catch((error) => {
         if (error?.code !== "EPIPE") console.error(`Cyberdeck stdout error: ${error.message}`);
+        shutdown();
       });
   };
 
@@ -306,6 +309,10 @@ export function createServer(config, { input = process.stdin, output = process.s
 
     const controller = new AbortController();
     const key = requestKey(id);
+    if (activeCalls.has(key)) {
+      send(errorResponse(id, new RpcError(-32600, "Invalid Request: id is already active.")));
+      return;
+    }
     activeCalls.set(key, controller);
     try {
       const result = await handleRequest(message, controller.signal);
@@ -384,6 +391,8 @@ export function createServer(config, { input = process.stdin, output = process.s
   input.on("end", onEnd);
   input.on("close", shutdown);
   input.on("error", shutdown);
+  output.on("error", shutdown);
+  output.on("close", shutdown);
 
   return { close: shutdown };
 }

@@ -15,6 +15,8 @@ for await (const chunk of process.stdin) prompt += chunk;
 const has = (keyword) => prompt.includes(keyword);
 
 if (process.env.FAKE_PI_PIDFILE) writeFileSync(process.env.FAKE_PI_PIDFILE, String(process.pid));
+if (has("FAKE_NOISE")) process.stdout.write("null\n42\ntrue\n[]\n{}\nnot json\n");
+if (has("FAKE_NO_EVENTS")) process.exit(0);
 
 const emit = (event) => process.stdout.write(`${JSON.stringify(event)}\n`);
 const messageEnd = (content, extra = {}) =>
@@ -59,12 +61,16 @@ if (has("FAKE_STDERR_ONLY")) {
     messageEnd([{ type: "text", text: "flooded" }]);
   } else if (has("FAKE_SILENT")) {
     messageEnd([]);
-  } else if (has("FAKE_LINGER")) {
+  } else if (has("FAKE_LINGER") || has("FAKE_HOLD_PIPE")) {
     messageEnd([{ type: "text", text: "lingered" }]);
-    spawn(process.execPath, ["-e", "setTimeout(() => {}, 1500)"], {
+    const descendant = spawn(process.execPath, ["-e", `setTimeout(() => {}, ${has("FAKE_HOLD_PIPE") ? 30000 : 1500})`], {
       detached: true,
       stdio: ["ignore", "inherit", "ignore"],
-    }).unref();
+    });
+    descendant.unref();
+    if (process.env.FAKE_PI_DESCENDANT_PIDFILE) {
+      writeFileSync(process.env.FAKE_PI_DESCENDANT_PIDFILE, String(descendant.pid));
+    }
   } else {
     if (has("FAKE_WAIT")) await new Promise((resolve) => setTimeout(resolve, 150));
     const payload = {

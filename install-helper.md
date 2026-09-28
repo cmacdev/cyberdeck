@@ -21,6 +21,7 @@ Every stop prints its cause; apply the fix and re-run the same command.
 | `no terminal available for the API key prompt` | Run in an interactive terminal (the prompt reads `/dev/tty`), or set `OPENROUTER_API_KEY` for the installer. Agents: hand this step to the user; never ask for or handle the key. |
 | `empty API key` / `Pi does not report OpenRouter credentials as ready` | Nothing was stored, or Pi rejected the key. Check `pi auth check --provider openrouter`; re-run to be prompted again. |
 | `pi was installed or detected but cannot now be found on PATH` | Add npm's global `bin` directory to the current shell's `PATH` and re-run. |
+| `configured Pi command … is not executable` | Set `pi.command` in the named configuration file to the detected executable path printed in the error, or restore your custom executable, then re-run. |
 | `cannot update ~/.claude.json` | Make the file valid JSON and writable. Unrelated settings are preserved. |
 | `cannot update ~/.claude/settings.json` | Make the file valid JSON and writable. Unrelated settings are preserved. |
 | `cannot update ~/.codex/config.toml` | Make the file writable. Unrelated content is preserved. |
@@ -33,7 +34,7 @@ Every stop prints its cause; apply the fix and re-run the same command.
 | `zip is required to build the Claude Desktop MCP bundle on macOS` | `xcode-select --install`, then re-run. Never checked on Linux. |
 | `unexpected failure at install.sh line <n>` | The named command failed; fix the error printed above it and re-run. |
 | `'<command>' failed` | That command printed its error just above; fix it and re-run. |
-| `cannot update or reclone <dir>` | The app copy and the network both failed. Remove `~/.cyberdeck/app` and re-run. |
+| `cannot update the app at <dir>` | The existing checkout stays in place. Fix the reported git or network error and re-run. |
 | `verification failed: the resolved configuration does not load` | `node ~/.cyberdeck/app/bin/cyberdeck-mcp.mjs --config ~/.cyberdeck/cyberdeck.config.json --inspect` prints the error; fix `~/.cyberdeck/cyberdeck.config.json` and re-run. |
 | `pi <found> found; left untouched (tested with <pinned>…)` (not a stop) | A different Pi version stays. `--pin-pi` installs the tested version, up or down. |
 | Claude Desktop says `ENOENT … package.mcpb` (not a stop) | The bundle was moved before approval. `open ~/.cyberdeck/cyberdeck.mcpb` and approve again. |
@@ -95,8 +96,8 @@ notices by design; interactive `pi` shows them itself. Restart clients afterward
 ## Uninstall
 
 `install.sh --uninstall` removes the Claude Code registration and both permission rules, the
-`[mcp_servers.cyberdeck]` block, both managed `deck` skills, the zero-data-retention routing pin,
+`[mcp_servers.cyberdeck]` block, both managed `deck` skills,
 the installer-set Pi default model and telemetry opt-out (marked `cyberdeckDefaults`; settings you chose yourself stay),
 and `~/.cyberdeck` (only when it is a Cyberdeck home); everything else in those files is preserved. On a Mac it reminds you to remove
-the extension in Claude Desktop. Pi and its auth store stay:
+the extension in Claude Desktop. Pi, its auth store, and OpenRouter routing stay:
 `npm uninstall -g @earendil-works/pi-coding-agent` and `rm -rf ~/.pi` remove them.

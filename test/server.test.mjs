@@ -431,6 +431,26 @@ test("a run with no assistant text succeeds with an empty final_output", async (
   assert.match(result.content[0].text, /succeeded without assistant text; events at /);
 });
 
+test("malformed and non-event Pi output cannot crash the server", async (t) => {
+  const { fixture, client } = await serverFor(t);
+  const result = await call(client, "research", callArguments(fixture, { task: "FAKE_NOISE" }));
+  assert.equal(result.structuredContent.status, "succeeded");
+  assert.equal(result.structuredContent.usage.turns, 1);
+  assert.equal((await client.request("ping")).resultType, "complete");
+});
+
+test("a zero exit without an assistant completion fails the run", async (t) => {
+  const { fixture, client } = await serverFor(t);
+  for (const task of ["FAKE_NO_EVENTS", "FAKE_NOISE FAKE_NO_EVENTS"]) {
+    const result = await call(client, "research", callArguments(fixture, { task }));
+    assert.equal(result.isError, true);
+    assert.equal(result.structuredContent.status, "failed");
+    assert.equal(result.structuredContent.exit_code, 0);
+    assert.equal(result.structuredContent.usage.turns, 0);
+    assert.equal(result.structuredContent.error, "Pi exited without an assistant completion.");
+  }
+});
+
 test("a missing Pi binary is a failed run with a null exit code and artifacts", async (t) => {
   const { fixture, client } = await serverFor(t, { pi: { command: "cyberdeck-no-such-binary", arguments: [] } });
   const result = await call(client, "research", callArguments(fixture));
@@ -542,6 +562,24 @@ test("a cancellation that lands during validation stops the call before anything
   await assert.rejects(readdir(fixture.artifactDirectory), "no run directory was created");
 });
 
+test("a duplicate request ID leaves the original run cancellable", async (t) => {
+  const { fixture, client } = await serverFor(t);
+  const id = 82;
+  client.send({
+    jsonrpc: "2.0", id, method: "tools/call",
+    params: { name: "research", arguments: callArguments(fixture, { task: "FAKE_HANG" }) },
+  });
+  await awaitRunEvents(fixture, /fake-session/);
+  client.send({ jsonrpc: "2.0", id: String(id), method: "ping" });
+  assert.ok((await client.waitForMessage((message) => message.id === String(id), 1000))?.result);
+  client.send({ jsonrpc: "2.0", id, method: "ping" });
+  const duplicate = await client.waitForMessage((message) => message.id === id, 1000);
+  assert.equal(duplicate?.error?.code, -32600);
+  client.notify("notifications/cancelled", { requestId: id });
+  assert.equal((await awaitRunResult(fixture)).status, "cancelled");
+  assert.equal((await call(client, "research", callArguments(fixture))).structuredContent.ok, true);
+});
+
 test("a cancellation after Pi exited but before its pipes closed does not relabel the run", async (t) => {
   const { fixture, client } = await serverFor(t);
   const id = 79;
@@ -568,6 +606,29 @@ test("a cancellation for a finished request is ignored", async (t) => {
   assert.equal((await client.request("ping")).resultType, "complete");
 });
 
+test("inherited output pipes cannot retain a completed run slot", async (t) => {
+  const fixture = await makeFixture(t);
+  const pidFile = path.join(fixture.root, "descendant.pid");
+  const client = startServer(t, await fixture.writeConfig("config"), {
+    env: { FAKE_PI_DESCENDANT_PIDFILE: pidFile },
+  });
+  let descendantPid;
+  t.after(() => {
+    if (descendantPid && isProcessAlive(descendantPid)) process.kill(descendantPid, "SIGKILL");
+  });
+  client.send({
+    jsonrpc: "2.0", id: 80, method: "tools/call",
+    params: { name: "research", arguments: callArguments(fixture, { task: "FAKE_HOLD_PIPE", timeout_seconds: 1 }) },
+  });
+  const result = await client.waitForMessage((message) => message.id === 80, 5000);
+  descendantPid = Number(await readFile(pidFile, "utf8"));
+  assert.ok(result, "inherited stdout blocked the completed result");
+  assert.equal(result.result.structuredContent.status, "succeeded");
+  assert.equal((await call(client, "research", callArguments(fixture))).structuredContent.ok, true);
+  client.child.kill("SIGTERM");
+  assert.ok(await client.waitForExit(5000), "inherited stdout blocked shutdown");
+});
+
 async function hangingChild(t, signalName) {
   const fixture = await makeFixture(t);
   const pidFile = path.join(fixture.root, "pi.pid");
@@ -586,15 +647,20 @@ async function hangingChild(t, signalName) {
   }
   assert.ok(pid, "fake pi did not start");
   assert.ok(isProcessAlive(pid));
-  if (signalName) client.child.kill(signalName);
+  if (signalName === "stdout") {
+    client.child.stdout.destroy();
+    client.send({ jsonrpc: "2.0", id: 2, method: "ping" });
+  } else if (signalName) client.child.kill(signalName);
   else client.endInput();
   const exit = await client.waitForExit(4000);
   assert.ok(exit, "server did not exit");
+  assert.equal(exit.code, 0, client.stderr());
   assert.equal(isProcessAlive(pid), false, "pi child survived server shutdown");
   assert.equal(await client.waitForMessage((message) => message.id === 1, 0), null);
 }
 
 test("stdin EOF stops reading and terminates running Pi before exiting", (t) => hangingChild(t, null));
+test("a broken stdout pipe terminates running Pi before exiting", (t) => hangingChild(t, "stdout"));
 
 for (const signalName of ["SIGTERM", "SIGINT", "SIGHUP"]) {
   test(`${signalName} terminates running Pi before exiting`, (t) => hangingChild(t, signalName));

@@ -219,7 +219,7 @@ function updateFromEvent(state, line) {
   } catch {
     return;
   }
-  if (event.type !== "message_end" || !event.message) return;
+  if (event?.type !== "message_end" || !event.message) return;
   const message = event.message;
   if (message.role !== "assistant") return;
   const text = extractAssistantText(message);
@@ -281,6 +281,7 @@ async function executePi({ args, prompt, environment, workingDirectory, paths, c
   let promptError = null;
   let child;
   let forceKillTimer;
+  let drainTimer;
 
   const terminate = (reason) => {
     if (terminationReason || !child || child.exitCode !== null || child.signalCode !== null) return;
@@ -328,6 +329,13 @@ async function executePi({ args, prompt, environment, workingDirectory, paths, c
   }
 
   if (child) {
+    child.once("exit", () => {
+      drainTimer = setTimeout(() => {
+        child.stdout.destroy();
+        child.stderr.destroy();
+      }, SIGKILL_GRACE_MS);
+      drainTimer.unref();
+    });
     child.on("error", (error) => {
       spawnError = error;
     });
@@ -351,6 +359,7 @@ async function executePi({ args, prompt, environment, workingDirectory, paths, c
     });
     clearTimeout(timeout);
     if (forceKillTimer) clearTimeout(forceKillTimer);
+    if (drainTimer) clearTimeout(drainTimer);
     signal?.removeEventListener("abort", abort);
     exitCode = child.pid === undefined ? null : closeCode;
   }
@@ -475,6 +484,7 @@ export async function runPi(profileName, rawInput, config, signal) {
     execution.promptError ||
     execution.artifactError ||
     execution.exitCode !== 0 ||
+    execution.state.usage.turns === 0 ||
     execution.state.stopReason === "error" ||
     execution.state.stopReason === "aborted"
   ) {
@@ -493,6 +503,8 @@ export async function runPi(profileName, rawInput, config, signal) {
       rawError = `Prompt delivery to Pi failed: ${execution.promptError.message}`;
     } else if (execution.artifactError) {
       rawError = `Artifact write failed: ${execution.artifactError.message}`;
+    } else if (execution.exitCode === 0 && execution.state.usage.turns === 0) {
+      rawError = "Pi exited without an assistant completion.";
     } else {
       rawError =
         execution.state.errorMessage ||

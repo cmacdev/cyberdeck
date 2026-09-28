@@ -16,7 +16,7 @@ Idempotent and sudo-free. Registers Cyberdeck with Claude Code and Codex (plus C
 Desktop and ChatGPT Desktop on macOS), installs Pi $PINNED_PI only when pi is absent
 (--pin-pi forces that version), and stores an OpenRouter key in Pi's auth store only
 when Pi has none. Piped runs clone CYBERDECK_REPO_URL into CYBERDECK_HOME/app.
---dry-run prints the plan; --uninstall reverses every write except Pi and its auth store.
+--dry-run prints the plan; --uninstall leaves Pi, its auth store, and OpenRouter routing.
 EOF
 }
 
@@ -213,31 +213,6 @@ if [ "$UNINSTALL" -eq 1 ]; then
     note "Pi: no installer-set default model; nothing to remove"
   fi
 
-  if zdr_pinned; then
-    if [ "$DRY_RUN" -eq 1 ]; then
-      note "Pi: would remove the zero-data-retention routing pin from $PI_MODELS"
-    else
-      PI_MODELS="$PI_MODELS" node -e "$ATOMIC_WRITE"'
-        const { readFileSync, unlinkSync } = require("node:fs");
-        const file = process.env.PI_MODELS;
-        const models = JSON.parse(readFileSync(file, "utf8"));
-        const routing = models.providers.openrouter.compat.openRouterRouting;
-        delete routing.zdr;
-        delete routing.data_collection;
-        const prune = (parent, key) => { if (!Object.keys(parent[key]).length) delete parent[key]; };
-        prune(models.providers.openrouter.compat, "openRouterRouting");
-        prune(models.providers.openrouter, "compat");
-        prune(models.providers, "openrouter");
-        prune(models, "providers");
-        if (Object.keys(models).length) atomicWrite(file, JSON.stringify(models, null, 2) + "\n", 0o600);
-        else unlinkSync(file);
-      ' || die "cannot update $PI_MODELS. Make it valid JSON and writable, then re-run."
-      note "Pi: removed the zero-data-retention routing pin from $PI_MODELS (other content preserved)"
-    fi
-  else
-    note "Pi: no zero-data-retention routing pin; nothing to remove"
-  fi
-
   if [ "$(uname -s)" = "Darwin" ] && [ -e "$CYBERDECK_HOME/cyberdeck.mcpb" ]; then
     note "ACTION REQUIRED: remove the Cyberdeck extension in Claude Desktop under Settings > Extensions (this script never edits Claude Desktop's app state)"
   fi
@@ -287,10 +262,7 @@ else
       && git -C "$APP_DIR" reset --hard --quiet FETCH_HEAD; then
       note "updated $APP_DIR to the published version (local changes there are discarded)"
     else
-      rm -rf "$APP_DIR"
-      git clone --depth 1 --quiet "$CYBERDECK_REPO_URL" "$APP_DIR" \
-        || die "cannot update or reclone $APP_DIR from $CYBERDECK_REPO_URL. Remove that directory and re-run."
-      note "recloned $APP_DIR (the previous copy could not be updated)"
+      die "cannot update the app at $APP_DIR. Fix the git error printed above, then re-run; the existing checkout has been left in place."
     fi
   else
     run mkdir -p "$CYBERDECK_HOME"
@@ -487,6 +459,9 @@ else
       '
     note "created installed policy at $CONFIG_PATH (absolute Pi path; artifacts in $CYBERDECK_HOME/runs)"
   fi
+  CONFIGURED_PI_COMMAND="$(node -p 'JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")).pi.command' "$CONFIG_PATH")"
+  command -v "$CONFIGURED_PI_COMMAND" >/dev/null 2>&1 \
+    || die "configured Pi command '$CONFIGURED_PI_COMMAND' is not executable. Set pi.command in $CONFIG_PATH to '$PI_COMMAND', then re-run."
 fi
 
 if command -v claude >/dev/null 2>&1; then

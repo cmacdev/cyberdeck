@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFile, spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import { chmod, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, readdir, realpath, writeFile } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 import { promisify } from "node:util";
@@ -153,6 +153,8 @@ test("an install without client binaries still writes the default Claude and Cod
       /managed by cyberdeck/,
     );
   }
+  await execFileAsync("bash", ["install.sh", "--uninstall"], { cwd: packageDirectory, env });
+  assert.deepEqual(JSON.parse(await readFile(path.join(fixture.root, ".pi", "agent", "models.json"), "utf8")), models);
 });
 
 test("the uninstall reverses the install and preserves unrelated configuration", async (t) => {
@@ -184,7 +186,7 @@ test("the uninstall reverses the install and preserves unrelated configuration",
   );
   const modelsPath = path.join(fixture.root, ".pi", "agent", "models.json");
   await mkdir(path.dirname(modelsPath), { recursive: true });
-  const userRouting = { providers: { openrouter: { compat: { openRouterRouting: { order: ["xai"] } } } } };
+  const userRouting = { providers: { openrouter: { compat: { openRouterRouting: { order: ["xai"], zdr: true, data_collection: "deny" } } } } };
   await writeFile(modelsPath, `${JSON.stringify(userRouting, null, 2)}\n`);
   const piSettingsPath = path.join(fixture.root, ".pi", "agent", "settings.json");
   const userSettings = { defaultModel: "user-choice", theme: "dark" };
@@ -218,6 +220,38 @@ test("the uninstall reverses the install and preserves unrelated configuration",
   for (const target of [".claude/skills/deck", ".codex/skills/deck", ".cyberdeck"]) {
     assert.equal(existsSync(path.join(fixture.root, target)), false, `${target} should be gone`);
   }
+});
+
+test("an unavailable configured Pi stops installation with a repair path", async (t) => {
+  const fixture = await makeFixture(t);
+  const bin = path.join(fixture.root, "bin");
+  const cyberdeckHome = path.join(fixture.root, ".cyberdeck");
+  await mkdir(bin);
+  await mkdir(cyberdeckHome);
+  for (const [name, script] of [
+    ["pi", '#!/bin/sh\nif [ "$1" = "--version" ]; then echo "pi 0.84.2"; else echo ready; fi\n'],
+    ["uname", "#!/bin/sh\necho Linux\n"],
+  ]) {
+    await writeFile(path.join(bin, name), script);
+    await chmod(path.join(bin, name), 0o755);
+  }
+  const config = JSON.parse(await readFile(path.join(packageDirectory, "cyberdeck.config.json"), "utf8"));
+  config.pi.command = path.join(fixture.root, "missing-pi");
+  const configPath = path.join(cyberdeckHome, "cyberdeck.config.json");
+  await writeFile(configPath, JSON.stringify(config));
+  const canonicalConfigPath = await realpath(configPath);
+  const env = { ...process.env, HOME: fixture.root, CYBERDECK_HOME: cyberdeckHome, PATH: `${bin}:${testSystemPath}` };
+  delete env.OPENROUTER_API_KEY;
+  await assert.rejects(execFileAsync("bash", ["install.sh"], { cwd: packageDirectory, env }), (error) => {
+    assert.ok(error.stderr.includes(`configured Pi command '${config.pi.command}' is not executable`));
+    assert.ok(error.stderr.includes(`Set pi.command in ${canonicalConfigPath} to '${path.join(bin, "pi")}'`));
+    return true;
+  });
+  assert.deepEqual(JSON.parse(await readFile(configPath, "utf8")), config);
+  config.pi.command = path.join(bin, "pi");
+  await writeFile(configPath, JSON.stringify(config));
+  const { stdout } = await execFileAsync("bash", ["install.sh"], { cwd: packageDirectory, env });
+  assert.match(stdout, /verified: resolved config loads/);
 });
 
 test("the uninstall is safe on a clean home and never touches an unmanaged deck skill", async (t) => {
@@ -370,11 +404,37 @@ test("a diverged or rewritten app clone is healed on re-run", async (t) => {
   });
 
   assert.equal(code, 0, stderr);
-  assert.match(stdout, /updated .* to the published version|recloned/);
+  assert.match(stdout, /updated .* to the published version/);
   const bareHead = (await execFileAsync("git", ["-C", bare, "rev-parse", "HEAD"])).stdout.trim();
   const appHead = (await execFileAsync("git", ["-C", appDir, "rev-parse", "HEAD"])).stdout.trim();
   assert.equal(appHead, bareHead, "app now tracks the published head");
   assert.equal(existsSync(path.join(appDir, "bin", "cyberdeck-mcp.mjs")), true);
+});
+
+test("a failed update preserves the working app without recloning", async (t) => {
+  const fixture = await makeFixture(t);
+  const cyberdeckHome = path.join(fixture.root, ".cyberdeck");
+  const appDir = path.join(cyberdeckHome, "app");
+  const bin = path.join(fixture.root, "bin");
+  await mkdir(path.join(appDir, ".git"), { recursive: true });
+  await mkdir(path.join(appDir, "bin"));
+  await mkdir(bin);
+  const server = path.join(appDir, "bin", "cyberdeck-mcp.mjs");
+  await writeFile(server, "working installation\n");
+  const git = path.join(bin, "git");
+  await writeFile(git, '#!/bin/sh\nif [ "$1" = "ls-remote" ]; then exit 0; fi\necho "simulated fetch failure" >&2\nexit 1\n');
+  await chmod(git, 0o755);
+  await assert.rejects(execFileAsync("bash", ["-c", 'bash -s < "$1"', "test", path.join(packageDirectory, "install.sh")], {
+    cwd: fixture.root,
+    env: {
+      ...process.env, HOME: fixture.root, CYBERDECK_HOME: cyberdeckHome,
+      CYBERDECK_REPO_URL: "file:///unused-test-source", PATH: `${bin}:${testSystemPath}`,
+    },
+  }), (error) => {
+    assert.match(error.stderr, /cannot update the app at/);
+    return true;
+  });
+  assert.equal(await readFile(server, "utf8"), "working installation\n");
 });
 
 test("the shipped deck skill is concise and names the Cyberdeck routing contract", async () => {
