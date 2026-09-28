@@ -153,6 +153,8 @@ test("an install without client binaries still writes the default Claude and Cod
       /managed by cyberdeck/,
     );
   }
+  await execFileAsync("bash", ["install.sh", "--uninstall"], { cwd: packageDirectory, env });
+  assert.deepEqual(JSON.parse(await readFile(path.join(fixture.root, ".pi", "agent", "models.json"), "utf8")), models);
 });
 
 test("the uninstall reverses the install and preserves unrelated configuration", async (t) => {
@@ -184,7 +186,7 @@ test("the uninstall reverses the install and preserves unrelated configuration",
   );
   const modelsPath = path.join(fixture.root, ".pi", "agent", "models.json");
   await mkdir(path.dirname(modelsPath), { recursive: true });
-  const userRouting = { providers: { openrouter: { compat: { openRouterRouting: { order: ["xai"] } } } } };
+  const userRouting = { providers: { openrouter: { compat: { openRouterRouting: { order: ["xai"], zdr: true, data_collection: "deny" } } } } };
   await writeFile(modelsPath, `${JSON.stringify(userRouting, null, 2)}\n`);
   const piSettingsPath = path.join(fixture.root, ".pi", "agent", "settings.json");
   const userSettings = { defaultModel: "user-choice", theme: "dark" };

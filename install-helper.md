@@ -95,8 +95,8 @@ notices by design; interactive `pi` shows them itself. Restart clients afterward
 ## Uninstall
 
 `install.sh --uninstall` removes the Claude Code registration and both permission rules, the
-`[mcp_servers.cyberdeck]` block, both managed `deck` skills, the zero-data-retention routing pin,
+`[mcp_servers.cyberdeck]` block, both managed `deck` skills,
 the installer-set Pi default model and telemetry opt-out (marked `cyberdeckDefaults`; settings you chose yourself stay),
 and `~/.cyberdeck` (only when it is a Cyberdeck home); everything else in those files is preserved. On a Mac it reminds you to remove
-the extension in Claude Desktop. Pi and its auth store stay:
+the extension in Claude Desktop. Pi, its auth store, and OpenRouter routing stay:
 `npm uninstall -g @earendil-works/pi-coding-agent` and `rm -rf ~/.pi` remove them.

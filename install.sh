@@ -16,7 +16,7 @@ Idempotent and sudo-free. Registers Cyberdeck with Claude Code and Codex (plus C
 Desktop and ChatGPT Desktop on macOS), installs Pi $PINNED_PI only when pi is absent
 (--pin-pi forces that version), and stores an OpenRouter key in Pi's auth store only
 when Pi has none. Piped runs clone CYBERDECK_REPO_URL into CYBERDECK_HOME/app.
---dry-run prints the plan; --uninstall reverses every write except Pi and its auth store.
+--dry-run prints the plan; --uninstall leaves Pi, its auth store, and OpenRouter routing.
 EOF
 }
 
@@ -211,31 +211,6 @@ if [ "$UNINSTALL" -eq 1 ]; then
     fi
   else
     note "Pi: no installer-set default model; nothing to remove"
-  fi
-
-  if zdr_pinned; then
-    if [ "$DRY_RUN" -eq 1 ]; then
-      note "Pi: would remove the zero-data-retention routing pin from $PI_MODELS"
-    else
-      PI_MODELS="$PI_MODELS" node -e "$ATOMIC_WRITE"'
-        const { readFileSync, unlinkSync } = require("node:fs");
-        const file = process.env.PI_MODELS;
-        const models = JSON.parse(readFileSync(file, "utf8"));
-        const routing = models.providers.openrouter.compat.openRouterRouting;
-        delete routing.zdr;
-        delete routing.data_collection;
-        const prune = (parent, key) => { if (!Object.keys(parent[key]).length) delete parent[key]; };
-        prune(models.providers.openrouter.compat, "openRouterRouting");
-        prune(models.providers.openrouter, "compat");
-        prune(models.providers, "openrouter");
-        prune(models, "providers");
-        if (Object.keys(models).length) atomicWrite(file, JSON.stringify(models, null, 2) + "\n", 0o600);
-        else unlinkSync(file);
-      ' || die "cannot update $PI_MODELS. Make it valid JSON and writable, then re-run."
-      note "Pi: removed the zero-data-retention routing pin from $PI_MODELS (other content preserved)"
-    fi
-  else
-    note "Pi: no zero-data-retention routing pin; nothing to remove"
   fi
 
   if [ "$(uname -s)" = "Darwin" ] && [ -e "$CYBERDECK_HOME/cyberdeck.mcpb" ]; then

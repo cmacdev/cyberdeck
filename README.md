@@ -94,8 +94,9 @@ never touched. Everything else is zero-dependency Node.
 
 Run the command at the top. Append `-s -- --dry-run` to print the plan without performing any
 of the writes below (the pi and claude probes may still create those tools' own state files); `-s -- --uninstall`
-reverses it. Re-running the same command is also the update path (`--pin-pi` moves Pi to the
-tested version). From a checkout, `bash install.sh [--dry-run|--uninstall]` registers the
+removes Cyberdeck while leaving Pi, its credentials, and OpenRouter routing. Re-running the
+same command is also the update path (`--pin-pi` moves Pi to the tested version).
+From a checkout, `bash install.sh [--dry-run|--uninstall]` registers the
 checkout itself.
 
 The key is taken from `OPENROUTER_API_KEY`, else prompted for with hidden input, and stored only
