@@ -59,12 +59,16 @@ if (has("FAKE_STDERR_ONLY")) {
     messageEnd([{ type: "text", text: "flooded" }]);
   } else if (has("FAKE_SILENT")) {
     messageEnd([]);
-  } else if (has("FAKE_LINGER")) {
+  } else if (has("FAKE_LINGER") || has("FAKE_HOLD_PIPE")) {
     messageEnd([{ type: "text", text: "lingered" }]);
-    spawn(process.execPath, ["-e", "setTimeout(() => {}, 1500)"], {
+    const descendant = spawn(process.execPath, ["-e", `setTimeout(() => {}, ${has("FAKE_HOLD_PIPE") ? 30000 : 1500})`], {
       detached: true,
       stdio: ["ignore", "inherit", "ignore"],
-    }).unref();
+    });
+    descendant.unref();
+    if (process.env.FAKE_PI_DESCENDANT_PIDFILE) {
+      writeFileSync(process.env.FAKE_PI_DESCENDANT_PIDFILE, String(descendant.pid));
+    }
   } else {
     if (has("FAKE_WAIT")) await new Promise((resolve) => setTimeout(resolve, 150));
     const payload = {

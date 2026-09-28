@@ -568,6 +568,29 @@ test("a cancellation for a finished request is ignored", async (t) => {
   assert.equal((await client.request("ping")).resultType, "complete");
 });
 
+test("inherited output pipes cannot retain a completed run slot", async (t) => {
+  const fixture = await makeFixture(t);
+  const pidFile = path.join(fixture.root, "descendant.pid");
+  const client = startServer(t, await fixture.writeConfig("config"), {
+    env: { FAKE_PI_DESCENDANT_PIDFILE: pidFile },
+  });
+  let descendantPid;
+  t.after(() => {
+    if (descendantPid && isProcessAlive(descendantPid)) process.kill(descendantPid, "SIGKILL");
+  });
+  client.send({
+    jsonrpc: "2.0", id: 80, method: "tools/call",
+    params: { name: "research", arguments: callArguments(fixture, { task: "FAKE_HOLD_PIPE", timeout_seconds: 1 }) },
+  });
+  const result = await client.waitForMessage((message) => message.id === 80, 5000);
+  descendantPid = Number(await readFile(pidFile, "utf8"));
+  assert.ok(result, "inherited stdout blocked the completed result");
+  assert.equal(result.result.structuredContent.status, "succeeded");
+  assert.equal((await call(client, "research", callArguments(fixture))).structuredContent.ok, true);
+  client.child.kill("SIGTERM");
+  assert.ok(await client.waitForExit(5000), "inherited stdout blocked shutdown");
+});
+
 async function hangingChild(t, signalName) {
   const fixture = await makeFixture(t);
   const pidFile = path.join(fixture.root, "pi.pid");

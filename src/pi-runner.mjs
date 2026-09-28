@@ -281,6 +281,7 @@ async function executePi({ args, prompt, environment, workingDirectory, paths, c
   let promptError = null;
   let child;
   let forceKillTimer;
+  let drainTimer;
 
   const terminate = (reason) => {
     if (terminationReason || !child || child.exitCode !== null || child.signalCode !== null) return;
@@ -328,6 +329,13 @@ async function executePi({ args, prompt, environment, workingDirectory, paths, c
   }
 
   if (child) {
+    child.once("exit", () => {
+      drainTimer = setTimeout(() => {
+        child.stdout.destroy();
+        child.stderr.destroy();
+      }, SIGKILL_GRACE_MS);
+      drainTimer.unref();
+    });
     child.on("error", (error) => {
       spawnError = error;
     });
@@ -351,6 +359,7 @@ async function executePi({ args, prompt, environment, workingDirectory, paths, c
     });
     clearTimeout(timeout);
     if (forceKillTimer) clearTimeout(forceKillTimer);
+    if (drainTimer) clearTimeout(drainTimer);
     signal?.removeEventListener("abort", abort);
     exitCode = child.pid === undefined ? null : closeCode;
   }
