@@ -21,6 +21,7 @@ Every stop prints its cause; apply the fix and re-run the same command.
 | `no terminal available for the API key prompt` | Run in an interactive terminal (the prompt reads `/dev/tty`), or set `OPENROUTER_API_KEY` for the installer. Agents: hand this step to the user; never ask for or handle the key. |
 | `empty API key` / `Pi does not report OpenRouter credentials as ready` | Nothing was stored, or Pi rejected the key. Check `pi auth check --provider openrouter`; re-run to be prompted again. |
 | `pi was installed or detected but cannot now be found on PATH` | Add npm's global `bin` directory to the current shell's `PATH` and re-run. |
+| `configured Pi command … is not executable` | Set `pi.command` in the named configuration file to the detected executable path printed in the error, or restore your custom executable, then re-run. |
 | `cannot update ~/.claude.json` | Make the file valid JSON and writable. Unrelated settings are preserved. |
 | `cannot update ~/.claude/settings.json` | Make the file valid JSON and writable. Unrelated settings are preserved. |
 | `cannot update ~/.codex/config.toml` | Make the file writable. Unrelated content is preserved. |

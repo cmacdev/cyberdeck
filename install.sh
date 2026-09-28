@@ -459,6 +459,9 @@ else
       '
     note "created installed policy at $CONFIG_PATH (absolute Pi path; artifacts in $CYBERDECK_HOME/runs)"
   fi
+  CONFIGURED_PI_COMMAND="$(node -p 'JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")).pi.command' "$CONFIG_PATH")"
+  command -v "$CONFIGURED_PI_COMMAND" >/dev/null 2>&1 \
+    || die "configured Pi command '$CONFIGURED_PI_COMMAND' is not executable. Set pi.command in $CONFIG_PATH to '$PI_COMMAND', then re-run."
 fi
 
 if command -v claude >/dev/null 2>&1; then

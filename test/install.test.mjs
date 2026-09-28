@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFile, spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import { chmod, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, readdir, realpath, writeFile } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 import { promisify } from "node:util";
@@ -220,6 +220,38 @@ test("the uninstall reverses the install and preserves unrelated configuration",
   for (const target of [".claude/skills/deck", ".codex/skills/deck", ".cyberdeck"]) {
     assert.equal(existsSync(path.join(fixture.root, target)), false, `${target} should be gone`);
   }
+});
+
+test("an unavailable configured Pi stops installation with a repair path", async (t) => {
+  const fixture = await makeFixture(t);
+  const bin = path.join(fixture.root, "bin");
+  const cyberdeckHome = path.join(fixture.root, ".cyberdeck");
+  await mkdir(bin);
+  await mkdir(cyberdeckHome);
+  for (const [name, script] of [
+    ["pi", '#!/bin/sh\nif [ "$1" = "--version" ]; then echo "pi 0.84.2"; else echo ready; fi\n'],
+    ["uname", "#!/bin/sh\necho Linux\n"],
+  ]) {
+    await writeFile(path.join(bin, name), script);
+    await chmod(path.join(bin, name), 0o755);
+  }
+  const config = JSON.parse(await readFile(path.join(packageDirectory, "cyberdeck.config.json"), "utf8"));
+  config.pi.command = path.join(fixture.root, "missing-pi");
+  const configPath = path.join(cyberdeckHome, "cyberdeck.config.json");
+  await writeFile(configPath, JSON.stringify(config));
+  const canonicalConfigPath = await realpath(configPath);
+  const env = { ...process.env, HOME: fixture.root, CYBERDECK_HOME: cyberdeckHome, PATH: `${bin}:${testSystemPath}` };
+  delete env.OPENROUTER_API_KEY;
+  await assert.rejects(execFileAsync("bash", ["install.sh"], { cwd: packageDirectory, env }), (error) => {
+    assert.ok(error.stderr.includes(`configured Pi command '${config.pi.command}' is not executable`));
+    assert.ok(error.stderr.includes(`Set pi.command in ${canonicalConfigPath} to '${path.join(bin, "pi")}'`));
+    return true;
+  });
+  assert.deepEqual(JSON.parse(await readFile(configPath, "utf8")), config);
+  config.pi.command = path.join(bin, "pi");
+  await writeFile(configPath, JSON.stringify(config));
+  const { stdout } = await execFileAsync("bash", ["install.sh"], { cwd: packageDirectory, env });
+  assert.match(stdout, /verified: resolved config loads/);
 });
 
 test("the uninstall is safe on a clean home and never touches an unmanaged deck skill", async (t) => {
