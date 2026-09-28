@@ -33,7 +33,7 @@ Every stop prints its cause; apply the fix and re-run the same command.
 | `zip is required to build the Claude Desktop MCP bundle on macOS` | `xcode-select --install`, then re-run. Never checked on Linux. |
 | `unexpected failure at install.sh line <n>` | The named command failed; fix the error printed above it and re-run. |
 | `'<command>' failed` | That command printed its error just above; fix it and re-run. |
-| `cannot update or reclone <dir>` | The app copy and the network both failed. Remove `~/.cyberdeck/app` and re-run. |
+| `cannot update the app at <dir>` | The existing checkout stays in place. Fix the reported git or network error and re-run. |
 | `verification failed: the resolved configuration does not load` | `node ~/.cyberdeck/app/bin/cyberdeck-mcp.mjs --config ~/.cyberdeck/cyberdeck.config.json --inspect` prints the error; fix `~/.cyberdeck/cyberdeck.config.json` and re-run. |
 | `pi <found> found; left untouched (tested with <pinned>…)` (not a stop) | A different Pi version stays. `--pin-pi` installs the tested version, up or down. |
 | Claude Desktop says `ENOENT … package.mcpb` (not a stop) | The bundle was moved before approval. `open ~/.cyberdeck/cyberdeck.mcpb` and approve again. |

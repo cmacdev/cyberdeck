@@ -287,10 +287,7 @@ else
       && git -C "$APP_DIR" reset --hard --quiet FETCH_HEAD; then
       note "updated $APP_DIR to the published version (local changes there are discarded)"
     else
-      rm -rf "$APP_DIR"
-      git clone --depth 1 --quiet "$CYBERDECK_REPO_URL" "$APP_DIR" \
-        || die "cannot update or reclone $APP_DIR from $CYBERDECK_REPO_URL. Remove that directory and re-run."
-      note "recloned $APP_DIR (the previous copy could not be updated)"
+      die "cannot update the app at $APP_DIR. Fix the git error printed above, then re-run; the existing checkout has been left in place."
     fi
   else
     run mkdir -p "$CYBERDECK_HOME"

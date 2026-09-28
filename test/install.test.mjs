@@ -370,11 +370,37 @@ test("a diverged or rewritten app clone is healed on re-run", async (t) => {
   });
 
   assert.equal(code, 0, stderr);
-  assert.match(stdout, /updated .* to the published version|recloned/);
+  assert.match(stdout, /updated .* to the published version/);
   const bareHead = (await execFileAsync("git", ["-C", bare, "rev-parse", "HEAD"])).stdout.trim();
   const appHead = (await execFileAsync("git", ["-C", appDir, "rev-parse", "HEAD"])).stdout.trim();
   assert.equal(appHead, bareHead, "app now tracks the published head");
   assert.equal(existsSync(path.join(appDir, "bin", "cyberdeck-mcp.mjs")), true);
+});
+
+test("a failed update preserves the working app without recloning", async (t) => {
+  const fixture = await makeFixture(t);
+  const cyberdeckHome = path.join(fixture.root, ".cyberdeck");
+  const appDir = path.join(cyberdeckHome, "app");
+  const bin = path.join(fixture.root, "bin");
+  await mkdir(path.join(appDir, ".git"), { recursive: true });
+  await mkdir(path.join(appDir, "bin"));
+  await mkdir(bin);
+  const server = path.join(appDir, "bin", "cyberdeck-mcp.mjs");
+  await writeFile(server, "working installation\n");
+  const git = path.join(bin, "git");
+  await writeFile(git, '#!/bin/sh\nif [ "$1" = "ls-remote" ]; then exit 0; fi\necho "simulated fetch failure" >&2\nexit 1\n');
+  await chmod(git, 0o755);
+  await assert.rejects(execFileAsync("bash", ["-c", 'bash -s < "$1"', "test", path.join(packageDirectory, "install.sh")], {
+    cwd: fixture.root,
+    env: {
+      ...process.env, HOME: fixture.root, CYBERDECK_HOME: cyberdeckHome,
+      CYBERDECK_REPO_URL: "file:///unused-test-source", PATH: `${bin}:${testSystemPath}`,
+    },
+  }), (error) => {
+    assert.match(error.stderr, /cannot update the app at/);
+    return true;
+  });
+  assert.equal(await readFile(server, "utf8"), "working installation\n");
 });
 
 test("the shipped deck skill is concise and names the Cyberdeck routing contract", async () => {
