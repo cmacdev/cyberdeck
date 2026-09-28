@@ -15,10 +15,11 @@ async function inspect(configPath, options) {
 }
 
 const REFUSALS = [
+  [{ modelAliases: { venice: { example: "" } } }, /modelAliases.venice.example must be a non-empty string/],
   [{ profiles: (p) => (p.research.tools.push("bash"), p) }, /profiles\.research\.tools cannot include mutating Pi tools: bash/],
   [{ workspaceRoots: ["/"] }, /must not be the filesystem root or the home directory/],
   [{ workspaceRoots: [os.homedir()] }, /must not be the filesystem root or the home directory/],
-  [{ provider: "openai" }, /provider must be exactly "openrouter"/],
+  [{ provider: "openai" }, /provider must be "openrouter" or "venice"/],
   [{ surprise: 1 }, /configuration has unknown key\(s\): surprise/],
   [{ profiles: (p) => ((p.research.extra = 1), p) }, /profiles\.research has unknown key\(s\): extra/],
   [{ profiles: (p) => ((p.research.roles.mechanical.extra = 1), p) }, /roles\.mechanical has unknown key\(s\): extra/],
@@ -34,6 +35,20 @@ const REFUSALS = [
   [{ limits: { maxArtifactBytes: 1023 } }, /maxArtifactBytes must be an integer greater than or equal to 1024/],
   [{ pi: { arguments: "-p" } }, /pi\.arguments must be an array/],
 ];
+
+test("Venice resolves shipped roles and allowed overrides without changing MCP tool names", async (t) => {
+  const fixture = await makeFixture(t);
+  const shipped = JSON.parse(await readFile(path.join(packageDirectory, "cyberdeck.config.json"), "utf8"));
+  const configPath = await fixture.writeConfig("venice", { provider: "venice", profiles: shipped.profiles, modelAliases: shipped.modelAliases });
+  const result = await inspect(configPath);
+  assert.equal(result.code, 0, result.stderr);
+  const report = JSON.parse(result.stdout);
+  assert.equal(report.configuration.provider, "venice");
+  assert.equal(report.catalog.research.roles.mechanical.model, "deepseek-v4-flash-0731");
+  assert.equal(report.catalog.implementation.roles.intellectual.model, "grok-4-7");
+  assert.deepEqual(report.tools.map((tool) => tool.name), ["research", "implement"]);
+  assert.deepEqual(report.tools[0].inputSchema.properties.model.enum, ["deepseek-v4-flash-0731", "kimi-k3", "grok-4-7"]);
+});
 
 test("invalid configurations refuse to start with a precise message", async (t) => {
   const fixture = await makeFixture(t);

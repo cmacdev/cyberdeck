@@ -10,22 +10,36 @@ CYBERDECK_REPO_URL="${CYBERDECK_REPO_URL:-https://github.com/cmacdev/cyberdeck.g
 
 usage() {
   cat <<EOF
-Usage: bash install.sh [--dry-run] [--pin-pi] [--uninstall]
+Usage: bash install.sh [--provider openrouter|venice] [--codex-only] [--dry-run] [--pin-pi] [--uninstall]
 
 Idempotent and sudo-free. Registers Cyberdeck with Claude Code and Codex (plus Claude
 Desktop and ChatGPT Desktop on macOS), installs Pi $PINNED_PI only when pi is absent
-(--pin-pi forces that version), and stores an OpenRouter key in Pi's auth store only
-when Pi has none. Piped runs clone CYBERDECK_REPO_URL into CYBERDECK_HOME/app.
---dry-run prints the plan; --uninstall leaves Pi, its auth store, and OpenRouter routing.
+(--pin-pi forces that version), and stores the selected provider key in Pi's auth store only
+when Pi has none. Venice requires an inference key restricted to private models.
+Piped runs clone CYBERDECK_REPO_URL into CYBERDECK_HOME/app.
+--codex-only skips Claude installation and never invokes its CLI or app.
+--dry-run prints the plan; --uninstall leaves Pi, its auth store, and provider settings.
 EOF
 }
 
 DRY_RUN=0
 PIN_PI=0
 UNINSTALL=0
-for argument in "$@"; do
+PROVIDER=""
+CODEX_ONLY=0
+while [ "$#" -gt 0 ]; do
+  argument="$1"
   case "$argument" in
+    --provider)
+      PROVIDER="${2:-}"
+      case "$PROVIDER" in
+        openrouter|venice) ;;
+        *) echo "install.sh: use --provider openrouter or --provider venice" >&2; exit 2 ;;
+      esac
+      shift
+      ;;
     --dry-run) DRY_RUN=1 ;;
+    --codex-only) CODEX_ONLY=1 ;;
     --pin-pi) PIN_PI=1 ;;
     --uninstall) UNINSTALL=1 ;;
     --help | -h)
@@ -38,6 +52,7 @@ for argument in "$@"; do
       exit 2
       ;;
   esac
+  shift
 done
 
 LOG_PREFIX="cyberdeck-install"
@@ -89,15 +104,21 @@ codex_registered() {
 }
 zdr_pinned() {
   [ -f "$PI_MODELS" ] && node -e '
-    const routing = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8"))?.providers?.openrouter?.compat?.openRouterRouting;
-    process.exit(routing?.zdr === true && routing?.data_collection === "deny" ? 0 : 1);
+    const provider = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8"))?.providers?.openrouter;
+    const entries = [provider, ...Object.values(provider?.modelOverrides ?? {}), ...(provider?.models ?? [])];
+    process.exit(entries.every(entry => {
+      const routing = entry?.compat?.openRouterRouting;
+      const bodyRouting = entry?.samplingParams?.provider;
+      return routing?.zdr === true && routing?.data_collection === "deny"
+        && (!Object.hasOwn(entry?.samplingParams ?? {}, "provider") || (bodyRouting?.zdr === true && bodyRouting?.data_collection === "deny"));
+    }) ? 0 : 1);
   ' "$PI_MODELS" 2>/dev/null
 }
 
 if [ "$UNINSTALL" -eq 1 ]; then
   command -v node >/dev/null 2>&1 || die "Node.js >= 20 is required. Install it first (e.g. 'brew install node')."
 
-  if command -v claude >/dev/null 2>&1 && claude mcp get cyberdeck >/dev/null 2>&1; then
+  if [ "$CODEX_ONLY" -ne 1 ] && command -v claude >/dev/null 2>&1 && claude mcp get cyberdeck >/dev/null 2>&1; then
     run claude mcp remove --scope user cyberdeck
     if [ "$DRY_RUN" -eq 1 ]; then
       note "Claude Code: would remove the cyberdeck registration"
@@ -252,6 +273,33 @@ node -e 'process.exit(Number(process.versions.node.split(".")[0]) >= 20 ? 0 : 1)
   || die "Node.js >= 20 is required; found $(node --version). Upgrade it first (e.g. 'brew install node')."
 note "node $(node --version) ok"
 
+CONFIG_PATH="$CYBERDECK_HOME/cyberdeck.config.json"
+INSTALLED_PROVIDER=""
+if [ -f "$CONFIG_PATH" ]; then
+  INSTALLED_PROVIDER="$(node -p 'JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")).provider' "$CONFIG_PATH")"
+  PI_AGENT_DIR="$(node -e '
+    const path = require("node:path");
+    const config = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8"));
+    console.log(config.pi.stateDirectory ? path.resolve(path.dirname(process.argv[1]), config.pi.stateDirectory) : process.argv[2]);
+  ' "$CONFIG_PATH" "$PI_AGENT_DIR")"
+  PI_MODELS="$PI_AGENT_DIR/models.json"
+fi
+if [ -z "$PROVIDER" ]; then
+  PROVIDER="${INSTALLED_PROVIDER:-openrouter}"
+  if [ "$DRY_RUN" -ne 1 ] && tty_usable; then
+    printf "Provider (openrouter/venice) [%s]: " "$PROVIDER" >/dev/tty
+    IFS= read -r PROVIDER_INPUT </dev/tty || PROVIDER_INPUT=""
+    PROVIDER="${PROVIDER_INPUT:-$PROVIDER}"
+  fi
+fi
+case "$PROVIDER" in
+  openrouter) PROVIDER_LABEL="OpenRouter" ;;
+  venice) PROVIDER_LABEL="Venice" ;;
+  *) die "unknown provider '$PROVIDER'. Re-run with --provider openrouter or --provider venice." ;;
+esac
+note "provider: $PROVIDER_LABEL (zero data retention required)"
+export PI_CODING_AGENT_DIR="$PI_AGENT_DIR"
+
 npm_global_writable() {
   local target
   for target in "$(npm root -g)" "$(npm prefix -g)/bin"; do
@@ -298,6 +346,7 @@ else
   fi
 fi
 
+if [ "$PROVIDER" = openrouter ]; then
 auth_ready() {
   local report
   report="$( (unset OPENROUTER_API_KEY; pi auth check --provider openrouter 2>/dev/null) || true)"
@@ -339,6 +388,7 @@ else
   auth_ready || die "Pi does not report OpenRouter credentials as ready after storing the key. $AUTH_FIX"
   note "stored OpenRouter key in Pi's auth store (~/.pi/agent/auth.json, mode 600)"
 fi
+fi
 
 if zdr_pinned; then
   note "Pi: OpenRouter routing already pinned to zero-data-retention endpoints in $PI_MODELS; left untouched"
@@ -351,11 +401,36 @@ else
     const file = process.env.PI_MODELS;
     mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
     const models = existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : {};
-    const compat = ((models.providers ??= {}).openrouter ??= {}).compat ??= {};
-    compat.openRouterRouting = { ...compat.openRouterRouting, zdr: true, data_collection: "deny" };
+    const provider = (models.providers ??= {}).openrouter ??= {};
+    for (const entry of [provider, ...Object.values(provider.modelOverrides ?? {}), ...(provider.models ?? [])]) {
+      const compat = entry.compat ??= {};
+      compat.openRouterRouting = { ...compat.openRouterRouting, zdr: true, data_collection: "deny" };
+      if (Object.hasOwn(entry.samplingParams ?? {}, "provider")) {
+        entry.samplingParams.provider = { ...entry.samplingParams.provider, zdr: true, data_collection: "deny" };
+      }
+    }
     atomicWrite(file, JSON.stringify(models, null, 2) + "\n", 0o600);
   ' || die "cannot update $PI_MODELS. Make it valid JSON (Pi accepts comments there; this installer does not) and writable, then re-run."
   note "Pi: pinned OpenRouter routing to zero-data-retention endpoints (zdr true, data_collection deny) in $PI_MODELS"
+fi
+
+if [ "$PROVIDER" = venice ]; then
+if [ "$DRY_RUN" -eq 1 ]; then
+  note "Pi: would verify the Venice inference key blocks anonymous text models, and register private tool-capable models in $PI_MODELS"
+else
+  if [ -z "${VENICE_API_KEY:-}" ] && ! node -e 'const fs=require("node:fs");try {process.exit(JSON.parse(fs.readFileSync(process.argv[1],"utf8")).venice?.key ? 0 : 1)} catch {process.exit(1)}' "$PI_AGENT_DIR/auth.json"; then
+    tty_usable || die "no terminal available for the Venice key prompt; set VENICE_API_KEY and re-run."
+    printf "Venice inference API key (input hidden): " >/dev/tty
+    IFS= read -rs VENICE_API_KEY </dev/tty || VENICE_API_KEY=""
+    echo >/dev/tty
+    [ -n "$VENICE_API_KEY" ] || die "empty Venice key. Re-run and paste the inference key at the prompt, or set VENICE_API_KEY."
+  fi
+  VENICE_API_KEY="${VENICE_API_KEY:-}" PI_AGENT_DIR="$PI_AGENT_DIR" \
+    CONFIG_PATH="$CONFIG_PATH" node "$APP_DIR/bin/configure-venice.mjs" \
+    || die "Venice setup failed. Fix the error printed above and re-run with a valid VENICE_API_KEY restricted to private models; see install-helper.md."
+  unset VENICE_API_KEY
+  note "Pi: Venice rejects anonymous text models; private tool-capable models registered in $PI_MODELS"
+fi
 fi
 
 if [ ! -f "$APP_DIR/cyberdeck.config.json" ] && [ "$DRY_RUN" -ne 1 ]; then
@@ -375,7 +450,7 @@ CONFIG_PATH="$CYBERDECK_HOME/cyberdeck.config.json"
 PI_POINTER="$CYBERDECK_HOME/pi-command"
 if [ "$DRY_RUN" -eq 1 ]; then
   if [ -f "$CONFIG_PATH" ]; then
-    note "installed policy at $CONFIG_PATH already exists; would leave it untouched"
+    note "installed policy at $CONFIG_PATH already exists; would select $PROVIDER and preserve other settings"
   else
     note "would create installed policy at $CONFIG_PATH with machine-specific executable paths"
   fi
@@ -387,15 +462,30 @@ else
   chmod 600 "$PI_POINTER"
   cp "$APP_DIR/cyberdeck.config.schema.json" "$CYBERDECK_HOME/cyberdeck.config.schema.json"
   if [ -f "$CONFIG_PATH" ]; then
-    note "installed policy at $CONFIG_PATH already exists; left untouched"
+    if [ "$INSTALLED_PROVIDER" != "$PROVIDER" ]; then
+      CONFIG_PATH="$CONFIG_PATH" SOURCE_CONFIG_PATH="$APP_DIR/cyberdeck.config.json" PROVIDER="$PROVIDER" PI_AGENT_DIR="$PI_AGENT_DIR" node -e "$ATOMIC_WRITE"'
+        const { readFileSync } = require("node:fs");
+        const config = JSON.parse(readFileSync(process.env.CONFIG_PATH, "utf8"));
+        const source = JSON.parse(readFileSync(process.env.SOURCE_CONFIG_PATH, "utf8"));
+        config.provider = process.env.PROVIDER;
+        config.modelAliases = { ...source.modelAliases, ...config.modelAliases };
+        config.pi.stateDirectory = process.env.PI_AGENT_DIR;
+        atomicWrite(process.env.CONFIG_PATH, JSON.stringify(config, null, 2) + "\n", 0o600);
+      '
+      note "installed policy: selected $PROVIDER; other settings preserved"
+    else
+      note "installed policy at $CONFIG_PATH already exists; left untouched"
+    fi
   else
     SOURCE_CONFIG_PATH="$APP_DIR/cyberdeck.config.json" CONFIG_PATH="$CONFIG_PATH" \
-      PI_COMMAND="$PI_COMMAND" CYBERDECK_HOME="$CYBERDECK_HOME" node -e '
+      PI_COMMAND="$PI_COMMAND" CYBERDECK_HOME="$CYBERDECK_HOME" PROVIDER="$PROVIDER" PI_AGENT_DIR="$PI_AGENT_DIR" node -e '
         const { readFileSync, writeFileSync } = require("node:fs");
         const path = require("node:path");
         const config = JSON.parse(readFileSync(process.env.SOURCE_CONFIG_PATH, "utf8"));
+        config.provider = process.env.PROVIDER;
         config.artifactDirectory = path.join(process.env.CYBERDECK_HOME, "runs");
         config.pi.command = process.env.PI_COMMAND;
+        config.pi.stateDirectory = process.env.PI_AGENT_DIR;
         writeFileSync(process.env.CONFIG_PATH, JSON.stringify(config, null, 2) + "\n", { mode: 0o600 });
       '
     note "created installed policy at $CONFIG_PATH (absolute Pi path; artifacts in $CYBERDECK_HOME/runs)"
@@ -405,6 +495,7 @@ else
     || die "configured Pi command '$CONFIGURED_PI_COMMAND' is not executable. Set pi.command in $CONFIG_PATH to '$PI_COMMAND', then re-run."
 fi
 
+if [ "$CODEX_ONLY" -ne 1 ]; then
 if command -v claude >/dev/null 2>&1; then
   if claude mcp get cyberdeck >/dev/null 2>&1; then
     note "Claude Code: cyberdeck already registered; left untouched"
@@ -460,6 +551,7 @@ else
   ' || die "cannot update $CLAUDE_SETTINGS. Ensure it contains valid JSON and is writable, then re-run."
   note "Claude Code: permission rules added (allow research, ask implement)"
 fi
+fi
 
 if codex_registered; then
   note "Codex: cyberdeck already registered; left untouched"
@@ -514,7 +606,7 @@ install_deck_skill() {
   mv "$temporary" "$target"
   note "$client: installed the deck skill at $target"
 }
-install_deck_skill "Claude Code" "$HOME/.claude/skills/deck"
+if [ "$CODEX_ONLY" -ne 1 ]; then install_deck_skill "Claude Code" "$HOME/.claude/skills/deck"; fi
 install_deck_skill "Codex and ChatGPT Desktop" "$HOME/.codex/skills/deck"
 
 PLATFORM="$(uname -s)"
@@ -525,7 +617,9 @@ if [ "$PLATFORM" = "Darwin" ]; then
     note "ChatGPT Desktop not found; Codex config is ready if the app is installed later"
   fi
 
-  if command -v open >/dev/null 2>&1 && open -Ra "Claude" >/dev/null 2>&1; then
+  if [ "$CODEX_ONLY" -eq 1 ]; then
+    note "Claude integrations skipped (--codex-only)"
+  elif command -v open >/dev/null 2>&1 && open -Ra "Claude" >/dev/null 2>&1; then
     command -v zip >/dev/null 2>&1 || die "zip is required to build the Claude Desktop MCP bundle on macOS. Install the Xcode command-line tools and re-run."
     MCPB_STAGE="$CYBERDECK_HOME/.mcpb-stage"
     MCPB_PATH="$CYBERDECK_HOME/cyberdeck.mcpb"
