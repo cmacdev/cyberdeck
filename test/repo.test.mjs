@@ -101,9 +101,9 @@ test("the deck skill names exactly the shipped roles", async () => {
 
 test("code carries no comments", async () => {
   const files = ["install.sh"];
-  for (const directory of ["bin", "desktop", "fixtures", "src", "test"]) {
+  for (const directory of ["bin", "desktop", "fixtures", "pi", "src", "test"]) {
     for (const name of await readdir(path.join(packageDirectory, directory), { recursive: true })) {
-      if (name.endsWith(".mjs")) files.push(path.join(directory, name));
+      if (/\.[cm]?js$/.test(name)) files.push(path.join(directory, name));
     }
   }
   for (const file of files) {

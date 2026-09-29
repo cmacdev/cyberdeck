@@ -117,7 +117,7 @@ async function canonicalContextFiles(values, config) {
   return result;
 }
 
-async function validateInput(profileName, rawInput, config) {
+export async function validateInput(profileName, rawInput, config) {
   const input = asObject(rawInput);
   const profile = config.profiles[profileName];
   const task = requiredString(input.task, "task", config.limits.maxTaskCharacters);
