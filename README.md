@@ -36,25 +36,11 @@ For Claude Desktop, a dialog will open that asks for a **workspace root**. Don't
 
 # Agents
 
-Cyberdeck is a small local MCP server (stdio, no npm dependencies) that turns Pi + OpenRouter or Venice
-into a typed delegation boundary for the coding agent you already use. The calling agent decides
-when to delegate; Cyberdeck enforces the visible policy: read-only `research` versus
-write-capable `implement`, bound models, workspace roots, limits, and artifacts. Pi is the inner
-engine Cyberdeck spawns, not a client.
-
-The installer supports Claude Code and Codex CLI; on macOS it also prepares ChatGPT Desktop and a
-Claude Desktop extension. Any MCP client that can launch a local stdio server can use it.
+Cyberdeck is a local stdio MCP server with no npm dependencies. The caller decides when to delegate; Cyberdeck enforces read-only `research` versus write-capable `implement`, bound models, workspace roots, limits, and artifacts. MCP calls spawn a stateless Pi process; that Pi is the engine, not a client. Herdr coordinators are persistent Pi sessions that manage workers. The installer registers Claude Code and Codex CLI; on macOS it also prepares ChatGPT Desktop and a Claude Desktop extension. Any MCP client that can launch a local stdio server can use it.
 
 ## Tools and roles
 
-- `research`: read-only Pi tool policy. Cyberdeck refuses to start if this profile includes Pi's
-  `bash`, `edit`, or `write` tools.
-- `implement`: write/shell-capable policy with honest destructive/open-world MCP annotations.
-
-Each tool takes a `role` (omit for the profile default) and an optional `model` override that
-must match the profile's `modelPatterns`. Policy lives in `cyberdeck.config.json`;
-`npm run inspect` prints the resolved contract, and `cyberdeck://catalog` and
-`cyberdeck://profiles` expose it to the client.
+`research` refuses Pi's `bash`, `edit`, and `write` tools. `implement` is annotated destructive and open-world. Omit `role` for the profile default. A `model` override must match that profile's `modelPatterns`. Policy is `cyberdeck.config.json`. `npm run inspect` prints the resolved contract; `cyberdeck://catalog` and `cyberdeck://profiles` expose it.
 
 | Tool | Role | Model | Use when |
 | --- | --- | --- | --- |
@@ -64,73 +50,31 @@ must match the profile's `modelPatterns`. Policy lives in `cyberdeck.config.json
 | `implement` | `intellectual` (default) | `x-ai/grok-4.7` | Bounded, spec-exact, reviewable diffs |
 | `implement` | `gritty` | `moonshotai/kimi-k3` | Ambiguous or cross-cutting; thorough |
 
-The table shows OpenRouter IDs. With Venice, `modelAliases.venice` in the same config resolves
-them to `deepseek-v4-flash-0731`, `kimi-k3`, and `grok-4-7`. The catalog and model overrides
-use the selected provider's IDs; role names and permissions stay the same.
+OpenRouter IDs are in the table. Venice aliases in the same config resolve them to `deepseek-v4-flash-0731`, `kimi-k3`, and `grok-4-7`; catalog and overrides use the selected provider's IDs. For an independent check, pick a review role whose model family differs from the implementer. Different role names can still select the same model.
 
-For independent verification, choose a different model family from the implementer using
-`cyberdeck://catalog`. Different role names can still select the same model.
-
-Pi runs stateless (`--no-session`). The shipped `pi.arguments` disables extension and skill
-discovery (`--no-extensions --no-skills`); existing installs can adopt these flags using
-the [policy update procedure](install-helper.md#update). Pi reuses your user-level auth and settings while
-`pi.stateDirectory` is `null`, and loads `AGENTS.md`/`CLAUDE.md` from the working directory while
-`pi.loadContextFiles` is `true`.
+MCP runs are stateless (`--no-session`). Herdr workers are persistent Pi sessions. Shipped `pi.arguments` are `--no-extensions --no-skills`; existing installs adopt flag changes through the [policy update procedure](install-helper.md#update). With `pi.stateDirectory` null, Pi reuses user-level auth and settings. With `pi.loadContextFiles` true, it loads `AGENTS.md` and `CLAUDE.md` from the working directory.
 
 ## What leaves your machine
 
-- The task, constraints, attached `context_files`, and whatever Pi's enabled tools read go to
-  the selected provider. OpenRouter requests require ZDR endpoints; Venice uses an inference
-  key that blocks anonymous text models. The installer verifies service-side enforcement.
-- Cyberdeck itself makes no network calls and disables Pi's update check and install telemetry
-  for every run (`PI_SKIP_VERSION_CHECK=1`, `PI_TELEMETRY=0`). Pi's tools reach whatever the
-  task uses, such as an explicitly loaded `web_search` extension or `bash` under `implement`.
-- The installer contacts github.com (clone), the npm registry (Pi, only when absent), and
-  Venice's API when configuring Venice (authentication, model metadata, and a one-token
-  privacy probe containing only `1`; an unrestricted key may incur a minimal inference charge).
-- Inference keys live in Pi's auth store.
+The task, constraints, attached `context_files`, and whatever enabled Pi tools read go to the selected provider. Cyberdeck makes no network calls. Each MCP run sets `PI_SKIP_VERSION_CHECK=1` and `PI_TELEMETRY=0`. Pi's own tools still reach the network when the task does, including `bash` under `implement`.
 
-Read [SECURITY.md](SECURITY.md) for the enforced and unenforced boundaries before unattended `implement`.
+The installer contacts github.com (clone), the npm registry (Pi, only when `pi` is absent), and Venice's API when configuring Venice: authentication, model metadata, and a one-token privacy probe containing only `1`. An unrestricted key may incur a minimal charge. Inference keys live in Pi's auth store. Provider ZDR does not cover local artifacts or external tools.
+
+Enforced and unenforced boundaries: [SECURITY.md](SECURITY.md). Read it before unattended `implement`.
 
 ## Requirements
 
-macOS or Linux, Node.js 20 or newer, git (piped install), and a provider API key. No Windows
-support; open an issue if you want it. Pi 0.84.2 is installed with
-`npm install -g` only when `pi` is absent (`--pin-pi` forces that version); an existing Pi is
-never touched. Everything else is zero-dependency Node.
+macOS or Linux, Node.js 20 or newer, git for a piped install, and a provider API key. No Windows support; open an issue if you want it. Pi 0.84.2 is installed with `npm install -g` only when `pi` is absent (`--pin-pi` forces that version). An existing Pi is never touched. Everything else is zero-dependency Node.
 
 ## Install
 
-Run the command at the top. Append `-s -- --dry-run` to print the plan without performing any
-of the writes below (the pi and claude probes may still create those tools' own state files); `-s -- --uninstall`
-removes Cyberdeck while leaving Pi, its credentials, and provider settings. Re-running the
-same command is also the update path (`--pin-pi` moves Pi to the tested version).
-From a checkout, `bash install.sh [--provider openrouter|venice] [--dry-run|--uninstall]` registers the
-checkout itself.
+Run the command at the top. From a checkout: `bash install.sh [--provider openrouter|venice] [--codex-only] [--herdr] [--dry-run] [--pin-pi] [--uninstall]`. Piped dry run: append `-s -- --dry-run` to the command at the top. It prints the plan and does not perform the writes below; the `pi` and `claude` probes may still create those tools' own state files. Re-running is the update. `--uninstall` removes Cyberdeck and leaves Pi, its credentials, and provider settings. The installer is idempotent and never uses sudo.
 
-Interactive installs ask for a provider, defaulting to the installed choice or OpenRouter.
-Use `--provider venice` or `--provider openrouter` to choose without a prompt.
-Add `--codex-only` to install only for Codex/ChatGPT and avoid invoking Claude's CLI or app.
-The same flag on uninstall removes existing file-based registrations without invoking Claude.
+Interactive installs ask for a provider, defaulting to the installed choice or OpenRouter. `--provider` skips the prompt. `--codex-only` installs and uninstalls without invoking Claude's CLI or app.
 
-OpenRouter takes `OPENROUTER_API_KEY`, otherwise prompts with hidden input, and preserves
-existing Pi credentials. Venice also uses an ordinary inference key: the saved Pi key,
-`VENICE_API_KEY`, or a hidden terminal prompt. Set its privacy to **Private Only** in
-[Venice API settings](https://venice.ai/settings/api) first. Each install verifies that an
-anonymous text request is rejected; no admin key or key-management access is needed.
+OpenRouter uses `OPENROUTER_API_KEY` or a hidden prompt, and keeps an existing Pi credential. Venice uses the saved Pi key, `VENICE_API_KEY`, or a hidden prompt. Set that key to **Private Only** in [Venice API settings](https://venice.ai/settings/api) before installing. Each install checks that an anonymous text request is rejected. No admin key is required. A privacy failure stops the install; there is no weaker fallback. OpenRouter pins `zdr: true` and `data_collection: "deny"`, including on model-specific routing overrides. Mechanism and the `PRIVATE_ONLY` / `PRIVATE_TEXT` distinction: [SECURITY.md](SECURITY.md).
 
-Venice uses Pi's `openai-completions` API at `https://api.venice.ai/api/v1`, discovers the
-configured models' limits and capabilities, and requires private models with tool calling.
-Its native [`PRIVATE_ONLY` key restriction](https://docs.venice.ai/api-reference/endpoint/api_keys/update)
-rejects anonymous models across modalities (`PRIVATE_TEXT` also protects Pi text requests);
-[Private means zero retention](https://docs.venice.ai/overview/privacy).
-OpenRouter keeps [`zdr: true` and `data_collection: "deny"`](https://openrouter.ai/docs/guides/features/zdr),
-including model-specific routing overrides. Privacy failures stop installation; there is no
-fallback to a weaker policy. ZDR covers provider inference; local run artifacts and external
-tools have their own retention behavior.
-
-The installer never uses sudo, is idempotent, and writes
-exactly these locations:
+The installer writes exactly these locations:
 
 | Path | Content |
 | --- | --- |
@@ -148,102 +92,38 @@ exactly these locations:
 | `~/.cyberdeck/cyberdeck.mcpb` | macOS with Claude Desktop installed: MCP bundle; the installer opens it and Claude asks for a workspace root and approval |
 | `~/.cyberdeck/claude-desktop.config.json`, `~/.cyberdeck/claude-desktop-runs` | Written by the Claude Desktop launcher on each start: the installed policy scoped to the chosen workspace root, and its artifacts |
 
-Stops and their fixes, manual client setup, and uninstall: [install-helper.md](install-helper.md).
-Install and uninstall leave Pi's interactive settings unchanged. Cyberdeck supplies its model,
-thinking, and telemetry settings per run.
-Restart the client afterwards. Invoke the skill with `/deck …` (Claude Code), `$deck …` (Codex
-CLI), or `@deck …` (ChatGPT Desktop); it picks `research` or `implement` and a role, and calls
-Cyberdeck with the absolute project directory.
+Stops, manual setup, update, and uninstall: [install-helper.md](install-helper.md). Install and uninstall do not change Pi's interactive settings; each run supplies its own model, thinking, and telemetry settings. Restart the client. Invoke `/deck …` (Claude Code), `$deck …` (Codex CLI), or `@deck …` (ChatGPT Desktop). The skill chooses `research` or `implement` and a role, and calls Cyberdeck with the absolute project directory.
 
 ## Configure
 
 ### Pi coordinators in Herdr
 
-With Herdr installed, run `bash install.sh --herdr` (add `--codex-only` to skip Claude
-integrations). This installs Herdr's official Pi state extension and Cyberdeck's coordinator
-extension. Reinstalls update the managed coordinator; Pi settings stay untouched.
+`bash install.sh --herdr` (add `--codex-only` to skip Claude) requires Herdr already installed. It adds Herdr's official Pi state extension and Cyberdeck's managed coordinator, and updates that coordinator on reinstall without touching Pi settings. Open Herdr in a project and start Pi inside it, for example `pi --provider venice --model grok-4-7`, or any model from the configured provider. Started outside Herdr, the coordinator stays inactive. Use `/reload` after installation.
 
-Open Herdr in a project and start `pi --provider venice --model grok-4-7`, or select a model
-from your configured provider. Each interactive Pi session gets a `workers` tool and
-orchestration instructions on every turn. Ask it to start workers, send concurrent tasks,
-read results, send follow-ups, and close completed workers. Workers run in a separate named
-Herdr server per coordinator, so only the primary sessions appear in your visible Agents
-list. Another primary Pi session, in the same or another workspace, gets its own workers.
+Each interactive session gets a `workers` tool. Orchestration instructions and the installed role catalog are supplied every turn, without relying on skill discovery. No `/deck` invocation. Workers are persistent Pi sessions on a separate named Herdr server per coordinator, hidden from the visible Agents list. Another primary session gets its own server. One-shot delegation remains the Deck MCP tools. Role models and thinking come from `~/.cyberdeck/cyberdeck.config.json`, not from the primary's model; explicit overrides still work.
 
-The coordinator receives the installed role catalog every turn and selects a profile and
-role for each worker. Models and thinking come from `~/.cyberdeck/cyberdeck.config.json`,
-independently of the primary's selected model; explicit overrides remain available.
-No skill invocation is required. Persistent subagents use `workers`; the Deck MCP tools
-remain available for one-shot delegation. For independent verification, select a configured
-review role with a different model family from the implementer when possible.
+Actions are `start`, `send`, `read`, `list`, `interrupt`, and `close`. `send` waits. A timeout does not mean the work stopped or the prompt was lost; the run still holds a concurrency slot, so read before retrying. A failed or unconfirmed start is `unregistered`: read its terminal, and `close` it to abandon the start and end its processes. Reload and resume reconnect by Pi session identity; a fork gets separate workers. Do not start another worker with the same task to replace an unconfirmed one.
 
-`workers` uses the installed Cyberdeck provider, roles, tools, workspace roots, and limits.
-Its `start`, `send`, `read`, `list`, `interrupt`, and `close` actions manage persistent Pi
-sessions; `send` waits for activity and completion. Timeouts leave work running and occupying
-a concurrency slot: read before retrying. Failed or unconfirmed starts appear as
-`unregistered`; read their terminal, then close explicitly to abandon the start and end its
-processes. Reload and resume reconnect by Pi session identity; a fork gets separate workers.
-Worker sessions are local state, outside inference ZDR, and are not an OS security boundary.
-Herdr stores their sockets and runtime state under its normal named-session directory;
-Cyberdeck stores worker Pi transcripts under `artifactDirectory/workers`.
+Worker sessions are local state, outside inference ZDR, and not an OS sandbox. Sockets live in Herdr's named-session directory. Transcripts live under `artifactDirectory/workers`. Guardrails only catch common direct pane and agent commands. `/deck-guardrails off` is for intentional manual terminal setup; `on` restores the checks. Do not disable them to bypass an error.
 
-Ordinary shell and file tools remain available. Common direct pane/agent creation commands
-are caught with a reminder to use `workers`; this is a mistake check, not a sandbox.
-Use `/deck-guardrails off` for intentional manual terminal work and `on` to restore checks.
-Use `/reload` after installation. With `--no-extensions`, explicitly load both
-`~/.pi/agent/extensions/herdr-agent-state.ts` and
-`~/.pi/agent/extensions/cyberdeck-coordinator/index.js` using `--extension`.
-
-The Pi footer shows the worker server name. Inspect it with `herdr --session <name>` and
-stop it with `herdr session stop <name>`. Detaching the primary terminal does not stop its
-workers. Close finished workers through the tool; stopping a worker server explicitly ends
-its processes. Uninstall removes the managed coordinator extension and leaves Herdr and its
-Pi state integration installed; stop worker servers first if you no longer need them.
-If a worker server stops, use `/reload` before starting or reconnecting workers.
+If Pi was started with `--no-extensions`, also pass `--extension` for both `~/.pi/agent/extensions/herdr-agent-state.ts` and `~/.pi/agent/extensions/cyberdeck-coordinator/index.js`. The footer names the worker server: `herdr --session <name>`, `herdr session stop <name>`. Detaching the primary terminal does not stop workers. Close finished workers with the tool. If that server stops, `/reload` before starting or reconnecting. Uninstall removes only the managed coordinator; stop worker servers first. Herdr and its Pi state extension stay. See [install-helper.md](install-helper.md#uninstall).
 
 ### Policy
 
-Edit `~/.cyberdeck/cyberdeck.config.json` (installed) or `cyberdeck.config.json` (checkout): each
-profile's `roles` (bound `model`, one-line `when`, thinking ceilings, optional `promptPreamble`),
-`modelPatterns` (the allowlist for role defaults and `model` overrides), `tools` (exact Pi
-built-in or extension tool names), `workspaceRoots` (`@cwd` is the server process's working
-directory; `/` and `$HOME` are refused), and `limits`. `npm run inspect` prints the resolved
-schemas, annotations, paths, catalog, and limits; it never prints a key.
+Edit `~/.cyberdeck/cyberdeck.config.json`, or `cyberdeck.config.json` in a checkout. Per profile: `roles` (`model`, one-line `when`, thinking ceilings, optional `promptPreamble`), `modelPatterns`, and `tools` (exact Pi built-in or extension names). Top-level: `workspaceRoots` (`@cwd` is the server's working directory; `/` and `$HOME` are refused) and `limits`. `npm run inspect` prints schemas, annotations, paths, catalog, and limits. It never prints a key.
 
-To load a trusted extension, add `"--extension", "/absolute/path/to/extension.ts"` to
-`pi.arguments` and its tool names to the required profile's `tools`. Explicit extension
-paths still load with `--no-extensions`. `pi.trustProjectFiles` controls project trust
-(`--approve` or `--no-approve`); it does not enable discovery. Extensions run with your
-OS permissions and can have side effects even when their tools are not selected.
+To load a trusted extension, add `"--extension", "/absolute/path/to/extension.ts"` to `pi.arguments` and its tool names to the profile that should have them. Explicit paths still load under `--no-extensions`. `pi.trustProjectFiles` chooses `--approve` or `--no-approve` and does not enable discovery. An extension runs with your OS permissions and can have side effects even when its tools are not selected.
 
 ## Calls, results, artifacts
 
-Both tools take `task` and an absolute `working_directory` inside a configured root, plus
-optional `role`, `model`, `thinking`, `context_files`, `constraints`, `timeout_seconds`, and
-`return_characters`; every ceiling is in the MCP JSON Schema and unknown fields are rejected.
-Results are typed: `status` (`succeeded`, `failed`, `timed_out`, `output_limit`, `rejected`), run
-id, role, actual model, Pi tool policy, `final_output` (the assistant's final text, capped at
-`return_characters`), usage, `error`, and artifact paths. A client-cancelled request
-(`notifications/cancelled`) terminates Pi and gets no response; its `result.json` records
-`status: "cancelled"`.
+Both tools take `task` and an absolute `working_directory` inside a configured root, plus optional `role`, `model`, `thinking`, `context_files`, `constraints`, `timeout_seconds`, and `return_characters`. Ceilings are in the MCP schema. Unknown fields are rejected.
 
-An answer cut short by the model's output token limit returns `status: "failed"` and
-`output_truncated: true`, retaining any partial text. A completed answer shortened only
-by `return_characters` remains successful and also sets `output_truncated: true`.
+`status` is `succeeded`, `failed`, `timed_out`, `output_limit`, or `rejected`. The result also has run id, role, actual model, Pi tool policy, capped `final_output`, usage, `error`, and artifact paths. A client cancel (`notifications/cancelled`) terminates Pi and returns no response; that run's `result.json` records `cancelled`. A model output-token cut is `failed` with `output_truncated: true` and any partial text. An answer shortened only by `return_characters` stays `succeeded` and also sets `output_truncated: true`.
 
-Each accepted call writes `<artifactDirectory>/<run-id>/` with `request.json` (effective request
-and policy), `events.jsonl` (Pi's event stream, capped together with stderr at
-`limits.maxArtifactBytes`), `stderr.log`, and `result.json`, as `0700`/`0600` files.
+Each accepted call writes `<artifactDirectory>/<run-id>/` (`0700`) containing `request.json`, `events.jsonl`, `stderr.log`, and `result.json` (`0600`). `events.jsonl` and stderr together stop at `limits.maxArtifactBytes`.
 
-## Protocol
-
-Newline-delimited JSON-RPC over stdio. Serves MCP `2026-07-28` discovery/result semantics and
-legacy `initialize` for `2025-11-25` through `2024-11-05`; an unsupported `_meta` protocol
-version gets `-32022` with the supported list. Lines over 16,777,216 characters are refused. On
-stdin EOF or `SIGTERM`/`SIGINT`/`SIGHUP` the server terminates every running Pi (SIGTERM, then
-SIGKILL after 2 s) before exiting.
+The server speaks MCP `2026-07-28` and accepts legacy `initialize` for `2025-11-25` through `2024-11-05`. An unsupported `_meta` protocol version gets `-32022` and the supported list. On stdin EOF or `SIGTERM` / `SIGINT` / `SIGHUP` it terminates every running Pi before exiting.
 
 ## Test
 
-`npm test` runs offline and pins the wire contract, enforcement, result semantics, shutdown,
-the installer, and the documentation tables.
+`npm test` is offline. It pins the wire contract, enforcement, result semantics, shutdown, the installer, and these documentation tables.
