@@ -143,6 +143,7 @@ exactly these locations:
 | `~/.claude/skills/deck`, `~/.codex/skills/deck` | The `deck` skill with a `.cyberdeck-managed` marker; an unmanaged skill of that name is never overwritten |
 | `~/.pi/agent/auth.json` | Selected provider's inference key; unrelated credentials preserved |
 | `~/.pi/agent/models.json` | OpenRouter ZDR routing on every install; Venice's endpoint and configured model metadata when selected; other providers preserved |
+| `~/.pi/agent/extensions/cyberdeck-coordinator`, `~/.pi/agent/extensions/herdr-agent-state.ts` | With `--herdr`: managed coordinator loader and Herdr's official Pi state extension |
 | npm's global directory (`npm prefix -g`) | Pi, only when `pi` was absent; `--uninstall` leaves it |
 | `~/.cyberdeck/cyberdeck.mcpb` | macOS with Claude Desktop installed: MCP bundle; the installer opens it and Claude asks for a workspace root and approval |
 | `~/.cyberdeck/claude-desktop.config.json`, `~/.cyberdeck/claude-desktop-runs` | Written by the Claude Desktop launcher on each start: the installed policy scoped to the chosen workspace root, and its artifacts |
@@ -155,6 +156,52 @@ CLI), or `@deck …` (ChatGPT Desktop); it picks `research` or `implement` and a
 Cyberdeck with the absolute project directory.
 
 ## Configure
+
+### Pi coordinators in Herdr
+
+With Herdr installed, run `bash install.sh --herdr` (add `--codex-only` to skip Claude
+integrations). This installs Herdr's official Pi state extension and Cyberdeck's coordinator
+extension. Reinstalls update the managed coordinator; Pi settings stay untouched.
+
+Open Herdr in a project and start `pi --provider venice --model grok-4-7`, or select a model
+from your configured provider. Each interactive Pi session gets a `workers` tool and
+orchestration instructions on every turn. Ask it to start workers, send concurrent tasks,
+read results, send follow-ups, and close completed workers. Workers run in a separate named
+Herdr server per coordinator, so only the primary sessions appear in your visible Agents
+list. Another primary Pi session, in the same or another workspace, gets its own workers.
+
+The coordinator receives the installed role catalog every turn and selects a profile and
+role for each worker. Models and thinking come from `~/.cyberdeck/cyberdeck.config.json`,
+independently of the primary's selected model; explicit overrides remain available.
+No skill invocation is required. Persistent subagents use `workers`; the Deck MCP tools
+remain available for one-shot delegation. For independent verification, select a configured
+review role with a different model family from the implementer when possible.
+
+`workers` uses the installed Cyberdeck provider, roles, tools, workspace roots, and limits.
+Its `start`, `send`, `read`, `list`, `interrupt`, and `close` actions manage persistent Pi
+sessions; `send` waits for activity and completion. Timeouts leave work running and occupying
+a concurrency slot: read before retrying. Failed or unconfirmed starts appear as
+`unregistered`; read their terminal, then close explicitly to abandon the start and end its
+processes. Reload and resume reconnect by Pi session identity; a fork gets separate workers.
+Worker sessions are local state, outside inference ZDR, and are not an OS security boundary.
+Herdr stores their sockets and runtime state under its normal named-session directory;
+Cyberdeck stores worker Pi transcripts under `artifactDirectory/workers`.
+
+Ordinary shell and file tools remain available. Common direct pane/agent creation commands
+are caught with a reminder to use `workers`; this is a mistake check, not a sandbox.
+Use `/deck-guardrails off` for intentional manual terminal work and `on` to restore checks.
+Use `/reload` after installation. With `--no-extensions`, explicitly load both
+`~/.pi/agent/extensions/herdr-agent-state.ts` and
+`~/.pi/agent/extensions/cyberdeck-coordinator/index.js` using `--extension`.
+
+The Pi footer shows the worker server name. Inspect it with `herdr --session <name>` and
+stop it with `herdr session stop <name>`. Detaching the primary terminal does not stop its
+workers. Close finished workers through the tool; stopping a worker server explicitly ends
+its processes. Uninstall removes the managed coordinator extension and leaves Herdr and its
+Pi state integration installed; stop worker servers first if you no longer need them.
+If a worker server stops, use `/reload` before starting or reconnecting workers.
+
+### Policy
 
 Edit `~/.cyberdeck/cyberdeck.config.json` (installed) or `cyberdeck.config.json` (checkout): each
 profile's `roles` (bound `model`, one-line `when`, thinking ceilings, optional `promptPreamble`),

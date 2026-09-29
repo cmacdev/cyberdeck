@@ -697,3 +697,40 @@ test("the Claude Desktop launcher creates a scoped config with the recorded Pi p
   assert.equal(generated.pi.command, pi);
   assert.equal(generated.artifactDirectory, path.join(cyberdeckHome, "claude-desktop-runs"));
 });
+
+test("Herdr opt-in installs and updates only its managed coordinator and preserves Pi settings", async (t) => {
+  const fixture = await makeFixture(t);
+  const bin = path.join(fixture.root, "bin");
+  await mkdir(bin);
+  const trace = path.join(fixture.root, "herdr-calls");
+  for (const [name, script] of [
+    ["pi", '#!/bin/sh\nif [ "$1" = "--version" ]; then echo "pi 0.84.2"; else echo ready; fi\n'],
+    ["uname", "#!/bin/sh\necho Linux\n"],
+    ["herdr", `#!/bin/sh\necho "$*" >> '${trace}'\n`],
+  ]) {
+    await writeFile(path.join(bin, name), script);
+    await chmod(path.join(bin, name), 0o755);
+  }
+  const agent = path.join(fixture.root, "agent");
+  await mkdir(agent);
+  const settings = '{"theme":"user-choice"}\n';
+  await writeFile(path.join(agent, "settings.json"), settings);
+  const env = { ...process.env, HOME: fixture.root, CYBERDECK_HOME: path.join(fixture.root, ".cyberdeck"), PI_CODING_AGENT_DIR: agent, PATH: `${bin}:${testSystemPath}` };
+  const target = path.join(agent, "extensions/cyberdeck-coordinator");
+  await execFileAsync("bash", ["install.sh", "--codex-only", "--herdr", "--dry-run"], { cwd: packageDirectory, env });
+  assert.equal(existsSync(target), false);
+  assert.equal(existsSync(trace), false);
+  await execFileAsync("bash", ["install.sh", "--codex-only", "--herdr"], { cwd: packageDirectory, env });
+  const loader = await readFile(path.join(target, "index.js"), "utf8");
+  assert.match(loader, /pi\/coordinator.js/);
+  assert.ok(loader.includes(await realpath(path.join(fixture.root, ".cyberdeck/cyberdeck.config.json"))));
+  assert.equal(await readFile(trace, "utf8"), "integration install pi\n");
+  await execFileAsync("bash", ["install.sh", "--codex-only"], { cwd: packageDirectory, env });
+  assert.equal(await readFile(path.join(target, "index.js"), "utf8"), loader);
+  assert.equal(await readFile(path.join(agent, "settings.json"), "utf8"), settings);
+  const uninstallEnv = { ...env };
+  delete uninstallEnv.PI_CODING_AGENT_DIR;
+  await execFileAsync("bash", ["install.sh", "--codex-only", "--uninstall"], { cwd: packageDirectory, env: uninstallEnv });
+  assert.equal(existsSync(target), false);
+  assert.equal(await readFile(path.join(agent, "settings.json"), "utf8"), settings);
+});

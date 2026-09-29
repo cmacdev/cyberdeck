@@ -32,6 +32,8 @@ Every stop prints its cause; apply the fix and re-run the same command.
 | `cannot update ~/.pi/agent/auth.json` | Make it valid JSON and writable, then re-run. Other providers' credentials are preserved. |
 | `cyberdeck.config.json is missing from <dir>` | The checkout is incomplete. Restore it (the piped installer clones a complete one), then re-run. |
 | `the bundled deck skill is missing` | Restore or update the Cyberdeck checkout (piped installs update `~/.cyberdeck/app` automatically). |
+| `Herdr is required for --herdr` | Install Herdr from herdr.dev, then re-run with `--herdr`. |
+| `cannot install the coordinator at <path> because it is not managed by Cyberdeck` | Move that extension directory aside, then re-run with `--herdr`. |
 | `cannot install the deck skill at <path> because that path already exists` | A non-Cyberdeck skill owns the name `deck`. Move or remove it; the installer never overwrites it. |
 | `zip is required to build the Claude Desktop MCP bundle on macOS` | `xcode-select --install`, then re-run. Never checked on Linux. |
 | `unexpected failure at install.sh line <n>` | The named command failed; fix the error printed above it and re-run. |
@@ -116,10 +118,12 @@ version does not replace an existing policy.
 ## Uninstall
 
 `install.sh --uninstall` removes the Claude Code registration and both permission rules, the
-`[mcp_servers.cyberdeck]` block, both managed `deck` skills,
+`[mcp_servers.cyberdeck]` block, both managed `deck` skills, the managed Pi coordinator,
 and `~/.cyberdeck` (only when it is a Cyberdeck home); everything else in those files is preserved. On a Mac it reminds you to remove
 the extension in Claude Desktop. Pi, its auth store, and provider settings stay. Revoke unused
 Venice keys in Venice API settings separately.
+Stop any coordinator worker servers with `herdr session stop <name>` before uninstalling.
+Herdr and its official Pi state integration are left installed.
 `npm uninstall -g @earendil-works/pi-coding-agent` and `rm -rf ~/.pi` remove them.
 
 Pi's `settings.json` is left unchanged, including defaults written by older Cyberdeck

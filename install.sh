@@ -10,7 +10,7 @@ CYBERDECK_REPO_URL="${CYBERDECK_REPO_URL:-https://github.com/cmacdev/cyberdeck.g
 
 usage() {
   cat <<EOF
-Usage: bash install.sh [--provider openrouter|venice] [--codex-only] [--dry-run] [--pin-pi] [--uninstall]
+Usage: bash install.sh [--provider openrouter|venice] [--codex-only] [--herdr] [--dry-run] [--pin-pi] [--uninstall]
 
 Idempotent and sudo-free. Registers Cyberdeck with Claude Code and Codex (plus Claude
 Desktop and ChatGPT Desktop on macOS), installs Pi $PINNED_PI only when pi is absent
@@ -18,6 +18,7 @@ Desktop and ChatGPT Desktop on macOS), installs Pi $PINNED_PI only when pi is ab
 when Pi has none. Venice requires an inference key restricted to private models.
 Piped runs clone CYBERDECK_REPO_URL into CYBERDECK_HOME/app.
 --codex-only skips Claude installation and never invokes its CLI or app.
+--herdr installs the Pi coordinator extension; requires an existing Herdr installation.
 --dry-run prints the plan; --uninstall leaves Pi, its auth store, and provider settings.
 EOF
 }
@@ -27,6 +28,7 @@ PIN_PI=0
 UNINSTALL=0
 PROVIDER=""
 CODEX_ONLY=0
+HERDR=0
 while [ "$#" -gt 0 ]; do
   argument="$1"
   case "$argument" in
@@ -40,6 +42,7 @@ while [ "$#" -gt 0 ]; do
       ;;
     --dry-run) DRY_RUN=1 ;;
     --codex-only) CODEX_ONLY=1 ;;
+    --herdr) HERDR=1 ;;
     --pin-pi) PIN_PI=1 ;;
     --uninstall) UNINSTALL=1 ;;
     --help | -h)
@@ -117,6 +120,14 @@ zdr_pinned() {
 
 if [ "$UNINSTALL" -eq 1 ]; then
   command -v node >/dev/null 2>&1 || die "Node.js >= 20 is required. Install it first (e.g. 'brew install node')."
+  if [ -f "$CYBERDECK_HOME/cyberdeck.config.json" ]; then
+    PI_AGENT_DIR="$(node -e '
+      const path = require("node:path");
+      const file = process.argv[1];
+      const config = JSON.parse(require("node:fs").readFileSync(file, "utf8"));
+      console.log(config.pi.stateDirectory ? path.resolve(path.dirname(file), config.pi.stateDirectory) : process.argv[2]);
+    ' "$CYBERDECK_HOME/cyberdeck.config.json" "$PI_AGENT_DIR")"
+  fi
 
   if [ "$CODEX_ONLY" -ne 1 ] && command -v claude >/dev/null 2>&1 && claude mcp get cyberdeck >/dev/null 2>&1; then
     run claude mcp remove --scope user cyberdeck
@@ -204,6 +215,7 @@ if [ "$UNINSTALL" -eq 1 ]; then
   }
   remove_deck_skill "Claude Code" "$HOME/.claude/skills/deck"
   remove_deck_skill "Codex and ChatGPT Desktop" "$HOME/.codex/skills/deck"
+  remove_deck_skill "Pi coordinator" "$PI_AGENT_DIR/extensions/cyberdeck-coordinator"
 
   if [ "$(uname -s)" = "Darwin" ] && [ -e "$CYBERDECK_HOME/cyberdeck.mcpb" ]; then
     note "ACTION REQUIRED: remove the Cyberdeck extension in Claude Desktop under Settings > Extensions (this script never edits Claude Desktop's app state)"
@@ -608,6 +620,30 @@ install_deck_skill() {
 }
 if [ "$CODEX_ONLY" -ne 1 ]; then install_deck_skill "Claude Code" "$HOME/.claude/skills/deck"; fi
 install_deck_skill "Codex and ChatGPT Desktop" "$HOME/.codex/skills/deck"
+
+COORDINATOR_TARGET="$PI_AGENT_DIR/extensions/cyberdeck-coordinator"
+if [ "$HERDR" -eq 1 ] || [ -f "$COORDINATOR_TARGET/.cyberdeck-managed" ]; then
+  command -v herdr >/dev/null 2>&1 || die "Herdr is required for --herdr. Install Herdr from herdr.dev, then re-run with --herdr."
+  if [ -e "$COORDINATOR_TARGET" ] && [ ! -f "$COORDINATOR_TARGET/.cyberdeck-managed" ]; then
+    die "cannot install the coordinator at $COORDINATOR_TARGET because it is not managed by Cyberdeck. Move it aside, then re-run with --herdr."
+  fi
+  run herdr integration install pi
+  if [ "$DRY_RUN" -eq 1 ]; then
+    note "Pi: would install the coordinator extension at $COORDINATOR_TARGET"
+  else
+    COORDINATOR_TARGET="$COORDINATOR_TARGET" APP_DIR="$APP_DIR" CONFIG_PATH="$CONFIG_PATH" node -e '
+      const { mkdirSync, realpathSync, writeFileSync } = require("node:fs");
+      const { pathToFileURL } = require("node:url");
+      const path = require("node:path");
+      const target = process.env.COORDINATOR_TARGET;
+      mkdirSync(target, { recursive: true });
+      writeFileSync(path.join(target, ".cyberdeck-managed"), "managed by cyberdeck install.sh\n");
+      const source = pathToFileURL(path.join(process.env.APP_DIR, "pi/coordinator.js")).href;
+      writeFileSync(path.join(target, "index.js"), "import { coordinator } from " + JSON.stringify(source) + ";\nexport default pi => coordinator(pi, { configPath: " + JSON.stringify(realpathSync(process.env.CONFIG_PATH)) + " });\n");
+    '
+    note "Pi: installed the coordinator extension; start Pi inside Herdr or run /reload"
+  fi
+fi
 
 PLATFORM="$(uname -s)"
 if [ "$PLATFORM" = "Darwin" ]; then
