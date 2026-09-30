@@ -426,6 +426,21 @@ else
   note "Pi: pinned OpenRouter routing to zero-data-retention endpoints (zdr true, data_collection deny) in $PI_MODELS"
 fi
 
+if [ ! -f "$APP_DIR/cyberdeck.config.json" ] && [ "$DRY_RUN" -ne 1 ]; then
+  die "cyberdeck.config.json is missing from $APP_DIR. Restore the checkout (the piped installer clones a complete one), then re-run."
+fi
+
+if command -v pi >/dev/null 2>&1; then
+  PI_COMMAND="$(command -v pi)"
+elif [ "$DRY_RUN" -eq 1 ]; then
+  PI_COMMAND="<absolute-path-to-pi>"
+else
+  die "pi was installed or detected but cannot now be found on PATH. Add npm's global bin directory to PATH and re-run."
+fi
+
+CONFIG_PATH="$CYBERDECK_HOME/cyberdeck.config.json"
+PI_POINTER="$CYBERDECK_HOME/pi-command"
+
 if [ "$PROVIDER" = venice ]; then
 if [ "$DRY_RUN" -eq 1 ]; then
   note "Pi: would verify the Venice inference key blocks anonymous text models, and register private tool-capable models in $PI_MODELS"
@@ -438,31 +453,16 @@ else
     [ -n "$VENICE_API_KEY" ] || die "empty Venice key. Re-run and paste the inference key at the prompt, or set VENICE_API_KEY."
   fi
   VENICE_API_KEY="${VENICE_API_KEY:-}" PI_AGENT_DIR="$PI_AGENT_DIR" \
-    CONFIG_PATH="$CONFIG_PATH" node "$APP_DIR/bin/configure-venice.mjs" \
+    node "$APP_DIR/bin/configure-venice.mjs" \
     || die "Venice setup failed. Fix the error printed above and re-run with a valid VENICE_API_KEY restricted to private models; see install-helper.md."
   unset VENICE_API_KEY
   note "Pi: Venice rejects anonymous text models; private tool-capable models registered in $PI_MODELS"
 fi
 fi
 
-if [ ! -f "$APP_DIR/cyberdeck.config.json" ] && [ "$DRY_RUN" -ne 1 ]; then
-  die "cyberdeck.config.json is missing from $APP_DIR. Restore the checkout (the piped installer clones a complete one), then re-run."
-fi
-
-NODE_COMMAND="$(node -p 'process.execPath')"
-if command -v pi >/dev/null 2>&1; then
-  PI_COMMAND="$(command -v pi)"
-elif [ "$DRY_RUN" -eq 1 ]; then
-  PI_COMMAND="<absolute-path-to-pi>"
-else
-  die "pi was installed or detected but cannot now be found on PATH. Add npm's global bin directory to PATH and re-run."
-fi
-
-CONFIG_PATH="$CYBERDECK_HOME/cyberdeck.config.json"
-PI_POINTER="$CYBERDECK_HOME/pi-command"
 if [ "$DRY_RUN" -eq 1 ]; then
   if [ -f "$CONFIG_PATH" ]; then
-    note "installed policy at $CONFIG_PATH already exists; would select $PROVIDER and preserve other settings"
+    note "would replace installed policy at $CONFIG_PATH with the published policy for $PROVIDER"
   else
     note "would create installed policy at $CONFIG_PATH with machine-specific executable paths"
   fi
@@ -470,42 +470,35 @@ if [ "$DRY_RUN" -eq 1 ]; then
 else
   mkdir -p "$CYBERDECK_HOME"
   chmod 700 "$CYBERDECK_HOME"
+  POLICY_EXISTED=0
+  if [ -f "$CONFIG_PATH" ]; then POLICY_EXISTED=1; fi
+  SOURCE_CONFIG_PATH="$APP_DIR/cyberdeck.config.json" CONFIG_PATH="$CONFIG_PATH" \
+    PI_COMMAND="$PI_COMMAND" CYBERDECK_HOME="$CYBERDECK_HOME" PROVIDER="$PROVIDER" PI_AGENT_DIR="$PI_AGENT_DIR" node -e "$ATOMIC_WRITE"'
+      const { chmodSync, readFileSync } = require("node:fs");
+      const path = require("node:path");
+      const config = JSON.parse(readFileSync(process.env.SOURCE_CONFIG_PATH, "utf8"));
+      config.provider = process.env.PROVIDER;
+      config["$" + "schema"] = path.join(process.env.CYBERDECK_HOME, "cyberdeck.config.schema.json");
+      config.artifactDirectory = path.join(process.env.CYBERDECK_HOME, "runs");
+      config.pi.command = process.env.PI_COMMAND;
+      config.pi.stateDirectory = process.env.PI_AGENT_DIR;
+      atomicWrite(process.env.CONFIG_PATH, JSON.stringify(config, null, 2) + "\n", 0o600);
+      chmodSync(process.env.CONFIG_PATH, 0o600);
+    ' || die "cannot update $CONFIG_PATH. Ensure $APP_DIR/cyberdeck.config.json is valid JSON and $CONFIG_PATH is writable, then re-run."
   printf '%s\n' "$PI_COMMAND" >"$PI_POINTER"
   chmod 600 "$PI_POINTER"
   cp "$APP_DIR/cyberdeck.config.schema.json" "$CYBERDECK_HOME/cyberdeck.config.schema.json"
-  if [ -f "$CONFIG_PATH" ]; then
-    if [ "$INSTALLED_PROVIDER" != "$PROVIDER" ]; then
-      CONFIG_PATH="$CONFIG_PATH" SOURCE_CONFIG_PATH="$APP_DIR/cyberdeck.config.json" PROVIDER="$PROVIDER" PI_AGENT_DIR="$PI_AGENT_DIR" node -e "$ATOMIC_WRITE"'
-        const { readFileSync } = require("node:fs");
-        const config = JSON.parse(readFileSync(process.env.CONFIG_PATH, "utf8"));
-        const source = JSON.parse(readFileSync(process.env.SOURCE_CONFIG_PATH, "utf8"));
-        config.provider = process.env.PROVIDER;
-        config.modelAliases = { ...source.modelAliases, ...config.modelAliases };
-        config.pi.stateDirectory = process.env.PI_AGENT_DIR;
-        atomicWrite(process.env.CONFIG_PATH, JSON.stringify(config, null, 2) + "\n", 0o600);
-      '
-      note "installed policy: selected $PROVIDER; other settings preserved"
-    else
-      note "installed policy at $CONFIG_PATH already exists; left untouched"
-    fi
+  if [ "$POLICY_EXISTED" -eq 1 ]; then
+    note "replaced installed policy at $CONFIG_PATH with the published policy for $PROVIDER"
   else
-    SOURCE_CONFIG_PATH="$APP_DIR/cyberdeck.config.json" CONFIG_PATH="$CONFIG_PATH" \
-      PI_COMMAND="$PI_COMMAND" CYBERDECK_HOME="$CYBERDECK_HOME" PROVIDER="$PROVIDER" PI_AGENT_DIR="$PI_AGENT_DIR" node -e '
-        const { readFileSync, writeFileSync } = require("node:fs");
-        const path = require("node:path");
-        const config = JSON.parse(readFileSync(process.env.SOURCE_CONFIG_PATH, "utf8"));
-        config.provider = process.env.PROVIDER;
-        config.artifactDirectory = path.join(process.env.CYBERDECK_HOME, "runs");
-        config.pi.command = process.env.PI_COMMAND;
-        config.pi.stateDirectory = process.env.PI_AGENT_DIR;
-        writeFileSync(process.env.CONFIG_PATH, JSON.stringify(config, null, 2) + "\n", { mode: 0o600 });
-      '
     note "created installed policy at $CONFIG_PATH (absolute Pi path; artifacts in $CYBERDECK_HOME/runs)"
   fi
   CONFIGURED_PI_COMMAND="$(node -p 'JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")).pi.command' "$CONFIG_PATH")"
   command -v "$CONFIGURED_PI_COMMAND" >/dev/null 2>&1 \
-    || die "configured Pi command '$CONFIGURED_PI_COMMAND' is not executable. Set pi.command in $CONFIG_PATH to '$PI_COMMAND', then re-run."
+    || die "configured Pi command '$CONFIGURED_PI_COMMAND' is not executable. Restore the detected Pi at '$PI_COMMAND', then re-run."
 fi
+
+NODE_COMMAND="$(node -p 'process.execPath')"
 
 if [ "$CODEX_ONLY" -ne 1 ]; then
 if command -v claude >/dev/null 2>&1; then

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFile, spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import { chmod, mkdir, readFile, readdir, realpath, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, readdir, realpath, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 import { promisify } from "node:util";
@@ -53,7 +53,7 @@ test("codex-only install and uninstall never invoke or restore Claude integratio
   assert.equal(existsSync(invoked), false);
 });
 
-test("Venice install, repeat install, and provider switching preserve custom policy and credentials", async (t) => {
+test("Venice install replaces a stale policy and preserves provider credentials", async (t) => {
   const fixture = await makeFixture(t);
   const bin = path.join(fixture.root, "bin");
   await mkdir(bin);
@@ -88,19 +88,46 @@ test("Venice install, repeat install, and provider switching preserve custom pol
   assert.ok(!installed.stdout.includes(inferenceKey));
   assert.ok(!installed.stderr.includes(inferenceKey));
   const configPath = path.join(cyberdeckHome, "cyberdeck.config.json");
+  const shipped = JSON.parse(await readFile(path.join(packageDirectory, "cyberdeck.config.json"), "utf8"));
   const policy = JSON.parse(await readFile(configPath, "utf8"));
   assert.equal(policy.provider, "venice");
   assert.equal(policy.pi.stateDirectory, agentDirectory);
+  assert.equal(policy.pi.command, path.join(bin, "pi"));
+  assert.equal(policy.artifactDirectory, path.join(cyberdeckHome, "runs"));
   policy.limits.maxTaskCharacters = 1234;
+  policy.profiles.research.roles.verify.model = "z-ai/glm-5.2";
+  policy.profiles.research.modelPatterns.push("z-ai/glm-5.2");
+  policy.modelAliases = { venice: { "moonshotai/kimi-k3": "z-ai/glm-5.2" } };
   await writeFile(configPath, JSON.stringify(policy));
+  const pointerPath = path.join(cyberdeckHome, "pi-command");
+  const schemaPath = path.join(cyberdeckHome, "cyberdeck.config.schema.json");
+  await writeFile(pointerPath, "/custom/pi\n");
+  await writeFile(schemaPath, "{\"custom\":true}\n");
   const authPath = path.join(agentDirectory, "auth.json");
   const auth = JSON.parse(await readFile(authPath, "utf8"));
   assert.deepEqual(auth.venice, { type: "api_key", key: inferenceKey });
+  await writeFile(preload, `import { veniceFixture } from ${JSON.stringify(path.join(packageDirectory, "fixtures/venice-api.mjs"))}; globalThis.fetch = veniceFixture({ failPath: "/chat/completions" }).fetch;\n`);
+  const failedAgain = await runWithClosedInput("bash", ["install.sh", "--provider", "venice"], { cwd: packageDirectory, env });
+  assert.equal(failedAgain.code, 1);
+  assert.equal(await readFile(configPath, "utf8"), JSON.stringify(policy));
+  assert.equal(await readFile(pointerPath, "utf8"), "/custom/pi\n");
+  assert.equal(await readFile(schemaPath, "utf8"), "{\"custom\":true}\n");
+  await writeFile(preload, `import { veniceFixture } from ${JSON.stringify(path.join(packageDirectory, "fixtures/venice-api.mjs"))}; globalThis.fetch = veniceFixture().fetch;\n`);
   const repeated = await execFileAsync("bash", ["install.sh"], { cwd: packageDirectory, env });
   assert.match(repeated.stdout, /provider: Venice/);
-  assert.equal(JSON.parse(await readFile(configPath, "utf8")).limits.maxTaskCharacters, 1234);
+  assert.match(repeated.stdout, /replaced installed policy/);
+  const replaced = JSON.parse(await readFile(configPath, "utf8"));
+  assert.equal(replaced.limits.maxTaskCharacters, shipped.limits.maxTaskCharacters);
+  assert.equal(replaced.profiles.research.roles.verify.model, shipped.profiles.research.roles.verify.model);
+  assert.deepEqual(replaced.modelAliases, shipped.modelAliases);
+  assert.equal(replaced.provider, "venice");
+  assert.equal(replaced.pi.stateDirectory, agentDirectory);
+  assert.equal(await readFile(pointerPath, "utf8"), `${path.join(bin, "pi")}\n`);
+  assert.equal((await stat(configPath)).mode & 0o777, 0o600);
   await execFileAsync("bash", ["install.sh", "--provider", "openrouter"], { cwd: packageDirectory, env });
-  assert.equal(JSON.parse(await readFile(configPath, "utf8")).provider, "openrouter");
+  const switched = JSON.parse(await readFile(configPath, "utf8"));
+  assert.equal(switched.provider, "openrouter");
+  assert.deepEqual(switched.profiles, shipped.profiles);
   assert.deepEqual(JSON.parse(await readFile(authPath, "utf8")), auth);
   await execFileAsync("bash", ["install.sh", "--provider", "venice"], { cwd: packageDirectory, env });
   assert.equal(JSON.parse(await readFile(configPath, "utf8")).provider, "venice");
@@ -338,7 +365,7 @@ test("the uninstall reverses the install and preserves unrelated configuration",
   }
 });
 
-test("an unavailable configured Pi stops installation with a repair path", async (t) => {
+test("a reinstall replaces an unavailable configured Pi with the detected executable", async (t) => {
   const fixture = await makeFixture(t);
   const bin = path.join(fixture.root, "bin");
   const cyberdeckHome = path.join(fixture.root, ".cyberdeck");
@@ -355,19 +382,12 @@ test("an unavailable configured Pi stops installation with a repair path", async
   config.pi.command = path.join(fixture.root, "missing-pi");
   const configPath = path.join(cyberdeckHome, "cyberdeck.config.json");
   await writeFile(configPath, JSON.stringify(config));
-  const canonicalConfigPath = await realpath(configPath);
   const env = { ...process.env, HOME: fixture.root, CYBERDECK_HOME: cyberdeckHome, PATH: `${bin}:${testSystemPath}` };
   delete env.OPENROUTER_API_KEY;
-  await assert.rejects(execFileAsync("bash", ["install.sh"], { cwd: packageDirectory, env }), (error) => {
-    assert.ok(error.stderr.includes(`configured Pi command '${config.pi.command}' is not executable`));
-    assert.ok(error.stderr.includes(`Set pi.command in ${canonicalConfigPath} to '${path.join(bin, "pi")}'`));
-    return true;
-  });
-  assert.deepEqual(JSON.parse(await readFile(configPath, "utf8")), config);
-  config.pi.command = path.join(bin, "pi");
-  await writeFile(configPath, JSON.stringify(config));
   const { stdout } = await execFileAsync("bash", ["install.sh"], { cwd: packageDirectory, env });
+  assert.match(stdout, /replaced installed policy/);
   assert.match(stdout, /verified: resolved config loads/);
+  assert.equal(JSON.parse(await readFile(configPath, "utf8")).pi.command, path.join(bin, "pi"));
 });
 
 test("the uninstall is safe on a clean home and never touches an unmanaged deck skill", async (t) => {

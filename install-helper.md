@@ -24,12 +24,13 @@ Every stop prints its cause; apply the fix and re-run the same command.
 | `Venice setup failed` | Fix the reported API, model, or JSON error. Use a valid inference key with Private Only selected in Venice API settings. The installer requires an explicit service refusal of a synthetic anonymous text request and private, available, tool-capable role models. Remove conflicting Venice auth/endpoint overrides from `models.json`. |
 | `empty API key` / `Pi does not report OpenRouter credentials as ready` | Nothing was stored, or Pi rejected the key. Check `pi auth check --provider openrouter`; re-run to be prompted again. |
 | `pi was installed or detected but cannot now be found on PATH` | Add npm's global `bin` directory to the current shell's `PATH` and re-run. |
-| `configured Pi command … is not executable` | Set `pi.command` in the named configuration file to the detected executable path printed in the error, or restore your custom executable, then re-run. |
+| `configured Pi command … is not executable` | Restore the detected Pi at the path printed in the error, then re-run. |
 | `cannot update ~/.claude.json` | Make the file valid JSON and writable. Unrelated settings are preserved. |
 | `cannot update ~/.claude/settings.json` | Make the file valid JSON and writable. Unrelated settings are preserved. |
 | `cannot update ~/.codex/config.toml` | Make the file writable. Unrelated content is preserved. |
 | `cannot update ~/.pi/agent/models.json` | Make it valid JSON (strip comments) and writable, then re-run. Unrelated content is preserved. |
 | `cannot update ~/.pi/agent/auth.json` | Make it valid JSON and writable, then re-run. Other providers' credentials are preserved. |
+| `cannot update ~/.cyberdeck/cyberdeck.config.json` | Make the published `cyberdeck.config.json` valid JSON and the installed policy writable, then re-run. |
 | `cyberdeck.config.json is missing from <dir>` | The checkout is incomplete. Restore it (the piped installer clones a complete one), then re-run. |
 | `the bundled deck skill is missing` | Restore or update the Cyberdeck checkout (piped installs update `~/.cyberdeck/app` automatically). |
 | `Herdr is required for --herdr` | Install Herdr from herdr.dev, then re-run with `--herdr`. |
@@ -92,28 +93,23 @@ Install Extension).
 ## Update
 
 Re-run the same install command. It resets `~/.cyberdeck/app` to the published version
-(local changes there are discarded — develop in a checkout instead) and preserves
-custom policy settings and unrelated Pi settings. The selected provider's privacy controls are
-reapplied; Venice reuses its saved inference key, checks privacy enforcement, and refreshes model metadata. Pi is never updated
-implicitly: when the found version differs from the tested one the installer says so and keeps
-it; add `--pin-pi` to move Pi to the tested version. Delegated runs suppress Pi's update
-notices by design; interactive `pi` shows them itself. Restart clients afterwards.
+(local changes there are discarded — develop in a checkout instead) and replaces
+`~/.cyberdeck/cyberdeck.config.json` with that version's policy for the selected provider.
+Machine paths are rewritten: the Pi executable, Pi state directory, artifact directory, and
+schema path. Roles, model aliases, limits, workspace roots, and Pi arguments are not preserved.
+Unrelated Pi settings are. The selected provider's privacy controls are reapplied before that
+replacement; a failed Venice check leaves the previous policy in place. Venice reuses its saved
+inference key, checks privacy enforcement against the published policy, and refreshes model
+metadata. Pi is never updated implicitly: when the found version differs from the tested
+one the installer says so and keeps it; add `--pin-pi` to move Pi to the tested version.
+Delegated runs suppress Pi's update notices by design; interactive `pi` shows them itself.
+Restart clients afterwards.
 
-To adopt new model routes or Pi flags, update the installed policy separately:
-
-1. Save a backup of `~/.cyberdeck/cyberdeck.config.json`.
-2. Compare it with `~/.cyberdeck/app/cyberdeck.config.json` (checkout installs: use
-   that checkout's config). Apply the desired changes to `profiles` and
-   `pi.arguments`. A model change must update both its role binding and the
-   profile's `modelPatterns`. Preserve custom routes, executable paths, workspace
-   roots, limits, and artifact locations.
-3. Validate with `node ~/.cyberdeck/app/bin/cyberdeck-mcp.mjs --config
-   ~/.cyberdeck/cyberdeck.config.json --inspect`, using the checkout path when
-   applicable. Restart the client and read `cyberdeck://catalog` and
-   `cyberdeck://profiles` to confirm the effective policy.
-
-If validation fails, restore the backup before restarting. Installing a new app
-version does not replace an existing policy.
+Edit the installed policy only for changes you are willing to reapply after the next install.
+A model change must update both its role binding and the profile's `modelPatterns`. Validate with
+`node ~/.cyberdeck/app/bin/cyberdeck-mcp.mjs --config ~/.cyberdeck/cyberdeck.config.json --inspect`,
+using the checkout path when applicable, then restart the client and read `cyberdeck://catalog`
+and `cyberdeck://profiles`.
 
 ## Uninstall
 
