@@ -52,7 +52,7 @@ Cyberdeck is a local stdio MCP server with no npm dependencies. The caller decid
 
 OpenRouter IDs are in the table. Venice aliases in the same config resolve them to `deepseek-v4-flash-0731`, `kimi-k3`, and `grok-4-7`; catalog and overrides use the selected provider's IDs. For an independent check, pick a review role whose model family differs from the implementer. Different role names can still select the same model.
 
-MCP runs are stateless (`--no-session`). Herdr workers are persistent Pi sessions. Shipped `pi.arguments` are `--no-extensions --no-skills`; existing installs adopt flag changes through the [policy update procedure](install-helper.md#update). With `pi.stateDirectory` null, Pi reuses user-level auth and settings. With `pi.loadContextFiles` true, it loads `AGENTS.md` and `CLAUDE.md` from the working directory.
+MCP runs are stateless (`--no-session`). Herdr workers are persistent Pi sessions. Shipped `pi.arguments` are `--no-extensions --no-skills`; a reinstall replaces them with the published policy. With `pi.stateDirectory` null, Pi reuses user-level auth and settings. With `pi.loadContextFiles` true, it loads `AGENTS.md` and `CLAUDE.md` from the working directory.
 
 ## What leaves your machine
 

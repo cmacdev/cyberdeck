@@ -89,9 +89,7 @@ async function main() {
     if (error.code === "ENOENT" && fallback !== undefined) return fallback;
     throw new Error(`Make ${file} valid JSON and readable, then re-run.`);
   });
-  const source = await read(new URL("../cyberdeck.config.json", import.meta.url));
-  const config = await read(process.env.CONFIG_PATH, source);
-  config.modelAliases = { ...source.modelAliases, ...config.modelAliases };
+  const config = await read(new URL("../cyberdeck.config.json", import.meta.url));
   const authPath = path.join(process.env.PI_AGENT_DIR, "auth.json");
   const modelsPath = path.join(process.env.PI_AGENT_DIR, "models.json");
   const result = await configureVenice({

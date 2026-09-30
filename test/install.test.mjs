@@ -81,7 +81,7 @@ test("Venice install replaces a stale policy and preserves provider credentials"
   assert.equal(failed.code, 1);
   assert.match(failed.stderr, /Venice setup failed/);
   assert.equal(existsSync(path.join(agentDirectory, "auth.json")), false);
-  assert.equal(existsSync(path.join(cyberdeckHome, "cyberdeck.config.json")), true);
+  assert.equal(existsSync(path.join(cyberdeckHome, "cyberdeck.config.json")), false);
   await writeFile(preload, `import { veniceFixture } from ${JSON.stringify(path.join(packageDirectory, "fixtures/venice-api.mjs"))}; globalThis.fetch = veniceFixture().fetch;\n`);
   const installed = await execFileAsync("bash", ["install.sh", "--provider", "venice"], { cwd: packageDirectory, env });
   assert.match(installed.stdout, /verified: resolved config loads/);
@@ -97,6 +97,7 @@ test("Venice install replaces a stale policy and preserves provider credentials"
   policy.limits.maxTaskCharacters = 1234;
   policy.profiles.research.roles.verify.model = "z-ai/glm-5.2";
   policy.profiles.research.modelPatterns.push("z-ai/glm-5.2");
+  policy.modelAliases = { venice: { "moonshotai/kimi-k3": "z-ai/glm-5.2" } };
   await writeFile(configPath, JSON.stringify(policy));
   const authPath = path.join(agentDirectory, "auth.json");
   const auth = JSON.parse(await readFile(authPath, "utf8"));

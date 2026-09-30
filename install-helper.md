@@ -24,7 +24,7 @@ Every stop prints its cause; apply the fix and re-run the same command.
 | `Venice setup failed` | Fix the reported API, model, or JSON error. Use a valid inference key with Private Only selected in Venice API settings. The installer requires an explicit service refusal of a synthetic anonymous text request and private, available, tool-capable role models. Remove conflicting Venice auth/endpoint overrides from `models.json`. |
 | `empty API key` / `Pi does not report OpenRouter credentials as ready` | Nothing was stored, or Pi rejected the key. Check `pi auth check --provider openrouter`; re-run to be prompted again. |
 | `pi was installed or detected but cannot now be found on PATH` | Add npm's global `bin` directory to the current shell's `PATH` and re-run. |
-| `configured Pi command … is not executable` | Set `pi.command` in the named configuration file to the detected executable path printed in the error, or restore your custom executable, then re-run. |
+| `configured Pi command … is not executable` | Set `pi.command` in the named configuration file to the detected executable path printed in the error, then re-run. |
 | `cannot update ~/.claude.json` | Make the file valid JSON and writable. Unrelated settings are preserved. |
 | `cannot update ~/.claude/settings.json` | Make the file valid JSON and writable. Unrelated settings are preserved. |
 | `cannot update ~/.codex/config.toml` | Make the file writable. Unrelated content is preserved. |
@@ -97,9 +97,10 @@ Re-run the same install command. It resets `~/.cyberdeck/app` to the published v
 `~/.cyberdeck/cyberdeck.config.json` with that version's policy for the selected provider.
 Machine paths are rewritten: the Pi executable, Pi state directory, artifact directory, and
 schema path. Roles, model aliases, limits, workspace roots, and Pi arguments are not preserved.
-Unrelated Pi settings are. The selected provider's privacy controls are reapplied; Venice reuses
-its saved inference key, checks privacy enforcement against the replaced policy, and refreshes
-model metadata. Pi is never updated implicitly: when the found version differs from the tested
+Unrelated Pi settings are. The selected provider's privacy controls are reapplied before that
+replacement; a failed Venice check leaves the previous policy in place. Venice reuses its saved
+inference key, checks privacy enforcement against the published policy, and refreshes model
+metadata. Pi is never updated implicitly: when the found version differs from the tested
 one the installer says so and keeps it; add `--pin-pi` to move Pi to the tested version.
 Delegated runs suppress Pi's update notices by design; interactive `pi` shows them itself.
 Restart clients afterwards.

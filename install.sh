@@ -453,6 +453,28 @@ else
   printf '%s\n' "$PI_COMMAND" >"$PI_POINTER"
   chmod 600 "$PI_POINTER"
   cp "$APP_DIR/cyberdeck.config.schema.json" "$CYBERDECK_HOME/cyberdeck.config.schema.json"
+fi
+
+if [ "$PROVIDER" = venice ]; then
+if [ "$DRY_RUN" -eq 1 ]; then
+  note "Pi: would verify the Venice inference key blocks anonymous text models, and register private tool-capable models in $PI_MODELS"
+else
+  if [ -z "${VENICE_API_KEY:-}" ] && ! node -e 'const fs=require("node:fs");try {process.exit(JSON.parse(fs.readFileSync(process.argv[1],"utf8")).venice?.key ? 0 : 1)} catch {process.exit(1)}' "$PI_AGENT_DIR/auth.json"; then
+    tty_usable || die "no terminal available for the Venice key prompt; set VENICE_API_KEY and re-run."
+    printf "Venice inference API key (input hidden): " >/dev/tty
+    IFS= read -rs VENICE_API_KEY </dev/tty || VENICE_API_KEY=""
+    echo >/dev/tty
+    [ -n "$VENICE_API_KEY" ] || die "empty Venice key. Re-run and paste the inference key at the prompt, or set VENICE_API_KEY."
+  fi
+  VENICE_API_KEY="${VENICE_API_KEY:-}" PI_AGENT_DIR="$PI_AGENT_DIR" \
+    CONFIG_PATH="$CONFIG_PATH" node "$APP_DIR/bin/configure-venice.mjs" \
+    || die "Venice setup failed. Fix the error printed above and re-run with a valid VENICE_API_KEY restricted to private models; see install-helper.md."
+  unset VENICE_API_KEY
+  note "Pi: Venice rejects anonymous text models; private tool-capable models registered in $PI_MODELS"
+fi
+fi
+
+if [ "$DRY_RUN" -ne 1 ]; then
   POLICY_EXISTED=0
   if [ -f "$CONFIG_PATH" ]; then POLICY_EXISTED=1; fi
   SOURCE_CONFIG_PATH="$APP_DIR/cyberdeck.config.json" CONFIG_PATH="$CONFIG_PATH" \
@@ -475,25 +497,6 @@ else
   CONFIGURED_PI_COMMAND="$(node -p 'JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")).pi.command' "$CONFIG_PATH")"
   command -v "$CONFIGURED_PI_COMMAND" >/dev/null 2>&1 \
     || die "configured Pi command '$CONFIGURED_PI_COMMAND' is not executable. Set pi.command in $CONFIG_PATH to '$PI_COMMAND', then re-run."
-fi
-
-if [ "$PROVIDER" = venice ]; then
-if [ "$DRY_RUN" -eq 1 ]; then
-  note "Pi: would verify the Venice inference key blocks anonymous text models, and register private tool-capable models in $PI_MODELS"
-else
-  if [ -z "${VENICE_API_KEY:-}" ] && ! node -e 'const fs=require("node:fs");try {process.exit(JSON.parse(fs.readFileSync(process.argv[1],"utf8")).venice?.key ? 0 : 1)} catch {process.exit(1)}' "$PI_AGENT_DIR/auth.json"; then
-    tty_usable || die "no terminal available for the Venice key prompt; set VENICE_API_KEY and re-run."
-    printf "Venice inference API key (input hidden): " >/dev/tty
-    IFS= read -rs VENICE_API_KEY </dev/tty || VENICE_API_KEY=""
-    echo >/dev/tty
-    [ -n "$VENICE_API_KEY" ] || die "empty Venice key. Re-run and paste the inference key at the prompt, or set VENICE_API_KEY."
-  fi
-  VENICE_API_KEY="${VENICE_API_KEY:-}" PI_AGENT_DIR="$PI_AGENT_DIR" \
-    CONFIG_PATH="$CONFIG_PATH" node "$APP_DIR/bin/configure-venice.mjs" \
-    || die "Venice setup failed. Fix the error printed above and re-run with a valid VENICE_API_KEY restricted to private models; see install-helper.md."
-  unset VENICE_API_KEY
-  note "Pi: Venice rejects anonymous text models; private tool-capable models registered in $PI_MODELS"
-fi
 fi
 
 NODE_COMMAND="$(node -p 'process.execPath')"

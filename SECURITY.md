@@ -9,7 +9,7 @@ It enforces the following before Pi starts:
 - The research profile cannot contain Pi's built-in `bash`, `edit`, or `write` tools.
 - Concurrent runs, thinking, timeout, task size, attachment count, path lengths, returned text, artifact size, and stdio line length are capped.
 - Pi runs without a saved conversation (`--no-session`) and without implicitly trusting project-local Pi extensions (`--no-approve`) by default.
-- The shipped `pi.arguments` disables automatic extension and skill discovery (`--no-extensions --no-skills`). Existing installations keep their configured arguments; apply these flags using the [policy update procedure](install-helper.md#update). Explicit extension paths still load.
+- The shipped `pi.arguments` disables automatic extension and skill discovery (`--no-extensions --no-skills`). A reinstall replaces the installed policy, including those arguments, with the published one. Explicit extension paths still load.
 - The task text is passed to Pi on stdin, never as a command-line argument, so it does not appear in process listings or command-line audit logs. Model, tool list, prompt preamble, and context-file paths remain command-line arguments.
 - Provider credentials are inherited from the process environment or Pi's own auth store. They are not MCP arguments or run-record fields.
 - When installed by `install.sh`, Pi's OpenRouter routing is pinned to zero-data-retention endpoints that do not train on submitted data (`zdr: true`, `data_collection: "deny"` in `~/.pi/agent/models.json`). This applies to every Pi OpenRouter request on the machine; a model without such an endpoint fails rather than falling back.
