@@ -24,6 +24,7 @@ const DOC_PATH_VARIABLES = {
   "~/.codex/config.toml": "$CODEX_CONFIG",
   "~/.pi/agent/models.json": "$PI_MODELS",
   "~/.pi/agent/auth.json": "$PI_AGENT_DIR/auth.json",
+  "~/.cyberdeck/cyberdeck.config.json": "$CONFIG_PATH",
 };
 
 function keyFragments(key) {

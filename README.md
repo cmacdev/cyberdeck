@@ -79,7 +79,7 @@ The installer writes exactly these locations:
 | Path | Content |
 | --- | --- |
 | `~/.cyberdeck/app` | Clone of this repo, reset to the published version on re-runs (piped install only) |
-| `~/.cyberdeck/cyberdeck.config.json` | Installed policy with the selected provider, absolute Pi executable/state paths and run directory (mode 600; custom settings preserved on re-run) |
+| `~/.cyberdeck/cyberdeck.config.json` | Published policy for the selected provider, with absolute Pi executable/state paths and run directory (mode 600; replaced on re-run) |
 | `~/.cyberdeck/cyberdeck.config.schema.json`, `~/.cyberdeck/pi-command` | Schema copy for editors; Pi path for Claude Desktop |
 | `~/.claude.json` | User-scope `cyberdeck` stdio server (`claude mcp add` when the CLI is present) |
 | `~/.claude/settings.json` | `permissions.allow: mcp__cyberdeck__research`, `permissions.ask: mcp__cyberdeck__implement` |
@@ -110,7 +110,7 @@ If Pi was started with `--no-extensions`, also pass `--extension` for both `~/.p
 
 ### Policy
 
-Edit `~/.cyberdeck/cyberdeck.config.json`, or `cyberdeck.config.json` in a checkout. Per profile: `roles` (`model`, one-line `when`, thinking ceilings, optional `promptPreamble`), `modelPatterns`, and `tools` (exact Pi built-in or extension names). Top-level: `workspaceRoots` (`@cwd` is the server's working directory; `/` and `$HOME` are refused) and `limits`. `npm run inspect` prints schemas, annotations, paths, catalog, and limits. It never prints a key.
+Edit `~/.cyberdeck/cyberdeck.config.json`, or `cyberdeck.config.json` in a checkout. A reinstall replaces the installed policy with the published one and rewrites machine paths, so reapply local edits afterwards. Per profile: `roles` (`model`, one-line `when`, thinking ceilings, optional `promptPreamble`), `modelPatterns`, and `tools` (exact Pi built-in or extension names). Top-level: `workspaceRoots` (`@cwd` is the server's working directory; `/` and `$HOME` are refused) and `limits`. `npm run inspect` prints schemas, annotations, paths, catalog, and limits. It never prints a key.
 
 To load a trusted extension, add `"--extension", "/absolute/path/to/extension.ts"` to `pi.arguments` and its tool names to the profile that should have them. Explicit paths still load under `--no-extensions`. `pi.trustProjectFiles` chooses `--approve` or `--no-approve` and does not enable discovery. An extension runs with your OS permissions and can have side effects even when its tools are not selected.
 
