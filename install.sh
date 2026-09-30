@@ -478,7 +478,7 @@ else
       const path = require("node:path");
       const config = JSON.parse(readFileSync(process.env.SOURCE_CONFIG_PATH, "utf8"));
       config.provider = process.env.PROVIDER;
-      config.$schema = path.join(process.env.CYBERDECK_HOME, "cyberdeck.config.schema.json");
+      config["$" + "schema"] = path.join(process.env.CYBERDECK_HOME, "cyberdeck.config.schema.json");
       config.artifactDirectory = path.join(process.env.CYBERDECK_HOME, "runs");
       config.pi.command = process.env.PI_COMMAND;
       config.pi.stateDirectory = process.env.PI_AGENT_DIR;
