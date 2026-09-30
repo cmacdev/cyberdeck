@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import { access, readFile, readdir, realpath, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { createInterface } from "node:readline";
+import { PassThrough } from "node:stream";
 import test from "node:test";
+
+import { loadConfig } from "../src/config.mjs";
+import { createServer } from "../src/server.mjs";
 
 import {
   MODERN_META,
@@ -809,3 +814,104 @@ for (const signalName of ["SIGTERM", "SIGINT", "SIGHUP"]) {
     assert.equal(exit.code, 0);
   });
 }
+
+async function progressHarness(t) {
+  const fixture = await makeFixture(t);
+  const configPath = await fixture.writeConfig("progress");
+  const config = await loadConfig(configPath);
+  const input = new PassThrough();
+  const output = new PassThrough();
+  const messages = [];
+  createInterface({ input: output, crlfDelay: Infinity }).on("line", (line) => {
+    messages.push(JSON.parse(line));
+  });
+  const server = createServer(config, { input, output, progressIntervalMs: 10 });
+  t.after(() => server.close());
+  let nextId = 1;
+  const send = (message) => input.write(`${JSON.stringify(message)}\n`);
+  const waitFor = async (predicate, ms = 4000) => {
+    const deadline = Date.now() + ms;
+    for (;;) {
+      const found = messages.find(predicate);
+      if (found) return found;
+      if (Date.now() > deadline) return null;
+      await sleep(5);
+    }
+  };
+  const progress = (id) =>
+    messages.filter((message) => message.method === "notifications/progress" && message.params.progressToken === id);
+  return {
+    fixture,
+    messages,
+    progress,
+    waitFor,
+    call(token) {
+      const id = nextId;
+      nextId += 1;
+      send({
+        jsonrpc: "2.0",
+        id,
+        method: "tools/call",
+        params: {
+          name: "research",
+          arguments: { task: "FAKE_WAIT report", working_directory: fixture.workspace },
+          _meta: token === undefined ? MODERN_META : { ...MODERN_META, progressToken: token },
+        },
+      });
+      return id;
+    },
+    async response(id) {
+      const message = await waitFor((candidate) => candidate.id === id);
+      assert.ok(message, `no response for ${id}`);
+      return message;
+    },
+    cancel(id) {
+      send({ jsonrpc: "2.0", method: "notifications/cancelled", params: { requestId: id } });
+    },
+  };
+}
+
+test("a call with a progress token reports progress until the response and then stops", async (t) => {
+  const { messages, progress, call, response } = await progressHarness(t);
+  const id = call("token-1");
+  const result = await response(id);
+  assert.equal(result.error, undefined);
+  const beats = progress("token-1");
+  assert.ok(beats.length >= 2, `expected progress heartbeats, got ${beats.length}`);
+  for (let index = 1; index < beats.length; index += 1) {
+    assert.ok(beats[index].params.progress > beats[index - 1].params.progress);
+  }
+  const afterResponse = beats.length;
+  await sleep(60);
+  assert.equal(progress("token-1").length, afterResponse);
+  assert.equal(
+    messages.filter((message) => message.method === "notifications/progress" && message.params.progressToken !== "token-1").length,
+    0,
+  );
+});
+
+test("a call without a progress token emits no progress notifications", async (t) => {
+  const { messages, call, response } = await progressHarness(t);
+  const id = call(undefined);
+  await response(id);
+  assert.equal(messages.filter((message) => message.method === "notifications/progress").length, 0);
+});
+
+test("a cancelled call stops reporting progress and gets no response", async (t) => {
+  const { messages, progress, waitFor, call, cancel } = await progressHarness(t);
+  const id = call(7);
+  const first = await waitFor(
+    (message) => message.method === "notifications/progress" && message.params.progressToken === 7,
+  );
+  assert.ok(first, "no heartbeat before cancel");
+  cancel(id);
+  let settled = 0;
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    settled = progress(7).length;
+    await sleep(40);
+    if (progress(7).length === settled) break;
+  }
+  await sleep(80);
+  assert.equal(progress(7).length, settled);
+  assert.equal(messages.some((message) => message.id === id), false);
+});
