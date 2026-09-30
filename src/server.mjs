@@ -18,6 +18,7 @@ import { InputError, runPi } from "./pi-runner.mjs";
 const SERVER_INFO_META_KEY = "io.modelcontextprotocol/serverInfo";
 const PROTOCOL_VERSION_META_KEY = "io.modelcontextprotocol/protocolVersion";
 const MAX_LINE_CHARACTERS = 16 * 1024 * 1024;
+const PROGRESS_INTERVAL_MS = 25000;
 
 class RpcError extends Error {
   constructor(code, message, data) {
@@ -197,7 +198,16 @@ function policyFileStampSync(configPath) {
   }
 }
 
-export function createServer(config, { input = process.stdin, output = process.stdout } = {}) {
+function progressTokenOf(params) {
+  const meta = isPlainObject(params._meta) ? params._meta : undefined;
+  const token = meta?.progressToken;
+  return typeof token === "string" || Number.isInteger(token) ? token : undefined;
+}
+
+export function createServer(
+  config,
+  { input = process.stdin, output = process.stdout, progressIntervalMs = PROGRESS_INTERVAL_MS } = {},
+) {
   let current = config;
   let tools = buildTools(current);
   let reloadError = null;
@@ -307,6 +317,23 @@ export function createServer(config, { input = process.stdin, output = process.s
           );
         }
         runningToolCalls += 1;
+        const progressToken = progressTokenOf(params);
+        const startedAt = Date.now();
+        const heartbeat =
+          progressToken === undefined
+            ? null
+            : setInterval(() => {
+                send({
+                  jsonrpc: "2.0",
+                  method: "notifications/progress",
+                  params: {
+                    progressToken,
+                    progress: Date.now() - startedAt,
+                    message: "Cyberdeck run in progress",
+                  },
+                });
+              }, progressIntervalMs);
+        heartbeat?.unref();
         try {
           const structured = await runPi(profileName, params.arguments ?? {}, policy, signal);
           if (structured === null || structured.status === "cancelled") return null;
@@ -320,6 +347,7 @@ export function createServer(config, { input = process.stdin, output = process.s
           failed.status = "failed";
           return toolResult(failed);
         } finally {
+          if (heartbeat !== null) clearInterval(heartbeat);
           runningToolCalls -= 1;
         }
       }

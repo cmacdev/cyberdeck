@@ -44,6 +44,7 @@ Every stop prints its cause; apply the fix and re-run the same command.
 | `pi <found> found; left untouched (tested with <pinned>…)` (not a stop) | A different Pi version stays. `--pin-pi` installs the tested version, up or down. |
 | Claude Desktop says `ENOENT … package.mcpb` (not a stop) | The bundle was moved before approval. `open ~/.cyberdeck/cyberdeck.mcpb` and approve again. |
 | OpenRouter says no endpoints match your data policy (not a stop) | Pick a model with a ZDR endpoint; keep `zdr` and `data_collection` enforced. |
+| Claude Desktop reports a request timeout on a long run (not a stop) | The app caps local MCP calls at 60 seconds; the server cannot extend it. Raise Settings > Connectors > MCP tool call timeout (60-3600 seconds, app-wide), or run long delegations from Claude Code or Codex. |
 
 ## After a successful run
 
