@@ -1,4 +1,7 @@
-import { publicCatalog, publicConfiguration } from "./config.mjs";
+import { statSync } from "node:fs";
+import { stat } from "node:fs/promises";
+
+import { loadConfig, publicCatalog, publicConfiguration } from "./config.mjs";
 import {
   CATALOG_RESOURCE_URI,
   LEGACY_PROTOCOL_VERSIONS,
@@ -35,7 +38,7 @@ function isRequestId(value) {
 
 function capabilities() {
   return {
-    tools: { listChanged: false },
+    tools: { listChanged: true },
     resources: { subscribe: false, listChanged: false },
   };
 }
@@ -185,8 +188,21 @@ export function inspectServer(config) {
   };
 }
 
+function policyFileStampSync(configPath) {
+  try {
+    const info = statSync(configPath);
+    return `${info.mtimeMs}:${info.size}`;
+  } catch {
+    return "missing";
+  }
+}
+
 export function createServer(config, { input = process.stdin, output = process.stdout } = {}) {
-  const tools = buildTools(config);
+  let current = config;
+  let tools = buildTools(current);
+  let reloadError = null;
+  let policyStamp = policyFileStampSync(config.configPath);
+  let reloadInFlight = null;
   const activeCalls = new Map();
   let runningToolCalls = 0;
   let writeQueue = Promise.resolve();
@@ -210,21 +226,50 @@ export function createServer(config, { input = process.stdin, output = process.s
       });
   };
 
+  const maybeReload = async () => {
+    if (reloadInFlight) return reloadInFlight;
+    reloadInFlight = (async () => {
+      try {
+        const stamp = await stat(current.configPath)
+          .then((info) => `${info.mtimeMs}:${info.size}`)
+          .catch(() => "missing");
+        if (stamp === policyStamp) return;
+        policyStamp = stamp;
+        try {
+          const next = await loadConfig(current.configPath);
+          const previousTools = JSON.stringify(tools);
+          current = next;
+          tools = buildTools(next);
+          reloadError = null;
+          if (JSON.stringify(tools) !== previousTools) {
+            send({ jsonrpc: "2.0", method: "notifications/tools/list_changed" });
+          }
+        } catch (error) {
+          reloadError = error;
+        }
+      } finally {
+        reloadInFlight = null;
+      }
+    })();
+    return reloadInFlight;
+  };
+
   const handleRequest = async (message, signal) => {
+    await maybeReload();
     const params = isPlainObject(message.params) ? message.params : {};
     switch (message.method) {
       case "server/discover":
         return {
           supportedVersions: [MODERN_PROTOCOL_VERSION],
           capabilities: capabilities(),
-          instructions: buildServerInstructions(config),
+          instructions: buildServerInstructions(current),
         };
       case "initialize":
         return {
           protocolVersion: legacyProtocolVersion(params.protocolVersion),
           capabilities: capabilities(),
           serverInfo: SERVER_INFO,
-          instructions: buildServerInstructions(config),
+          instructions: buildServerInstructions(current),
         };
       case "ping":
         return {};
@@ -237,29 +282,39 @@ export function createServer(config, { input = process.stdin, output = process.s
         }
         const profileName = toolName === "research" ? "research" : "implementation";
         if (signal.aborted) return null;
-        if (runningToolCalls >= config.limits.maxConcurrentRuns) {
+        if (reloadError) {
           return toolResult(
             rejectedResult(
               profileName,
               params.arguments,
-              config,
+              current,
+              new InputError(`Configuration reload failed: ${reloadError.message}`),
+            ),
+          );
+        }
+        if (runningToolCalls >= current.limits.maxConcurrentRuns) {
+          return toolResult(
+            rejectedResult(
+              profileName,
+              params.arguments,
+              current,
               new InputError(
-                `Concurrent run limit reached (${config.limits.maxConcurrentRuns}); retry after another run completes.`,
+                `Concurrent run limit reached (${current.limits.maxConcurrentRuns}); retry after another run completes.`,
               ),
             ),
           );
         }
         runningToolCalls += 1;
         try {
-          const structured = await runPi(profileName, params.arguments ?? {}, config, signal);
+          const structured = await runPi(profileName, params.arguments ?? {}, current, signal);
           if (structured === null || structured.status === "cancelled") return null;
           return toolResult(structured);
         } catch (error) {
           if (signal.aborted) return null;
           if (error instanceof InputError) {
-            return toolResult(rejectedResult(profileName, params.arguments, config, error));
+            return toolResult(rejectedResult(profileName, params.arguments, current, error));
           }
-          const failed = rejectedResult(profileName, params.arguments, config, error);
+          const failed = rejectedResult(profileName, params.arguments, current, error);
           failed.status = "failed";
           return toolResult(failed);
         } finally {
@@ -269,7 +324,7 @@ export function createServer(config, { input = process.stdin, output = process.s
       case "resources/list":
         return { ttlMs: 60000, cacheScope: "private", resources: listedResources() };
       case "resources/read": {
-        const resource = readResource(params.uri, config);
+        const resource = readResource(params.uri, current);
         if (!resource) {
           throw new RpcError(-32602, `Unknown resource URI: ${String(params.uri)}`);
         }

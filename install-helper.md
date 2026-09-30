@@ -47,7 +47,8 @@ Every stop prints its cause; apply the fix and re-run the same command.
 
 ## After a successful run
 
-Restart the client. `claude mcp get cyberdeck` (Claude Code) or `~/.codex/config.toml` (Codex
+Restart the client after a first install so it spawns the server; on reinstall, running servers
+pick up the replaced policy without a restart. `claude mcp get cyberdeck` (Claude Code) or `~/.codex/config.toml` (Codex
 CLI, ChatGPT Desktop) shows the registration; Claude Desktop lists the extension under Settings >
 Extensions and its configured workspace must still exist.
 `node ~/.cyberdeck/app/bin/cyberdeck-mcp.mjs --config ~/.cyberdeck/cyberdeck.config.json --inspect`
@@ -103,13 +104,13 @@ inference key, checks privacy enforcement against the published policy, and refr
 metadata. Pi is never updated implicitly: when the found version differs from the tested
 one the installer says so and keeps it; add `--pin-pi` to move Pi to the tested version.
 Delegated runs suppress Pi's update notices by design; interactive `pi` shows them itself.
-Restart clients afterwards.
+Running servers pick up the replaced policy without a client restart.
 
 Edit the installed policy only for changes you are willing to reapply after the next install.
 A model change must update both its role binding and the profile's `modelPatterns`. Validate with
 `node ~/.cyberdeck/app/bin/cyberdeck-mcp.mjs --config ~/.cyberdeck/cyberdeck.config.json --inspect`,
-using the checkout path when applicable, then restart the client and read `cyberdeck://catalog`
-and `cyberdeck://profiles`.
+using the checkout path when applicable; the running server picks up the change. Read
+`cyberdeck://catalog` and `cyberdeck://profiles` to confirm.
 
 ## Uninstall
 
