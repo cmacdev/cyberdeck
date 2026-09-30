@@ -24,7 +24,7 @@ Every stop prints its cause; apply the fix and re-run the same command.
 | `Venice setup failed` | Fix the reported API, model, or JSON error. Use a valid inference key with Private Only selected in Venice API settings. The installer requires an explicit service refusal of a synthetic anonymous text request and private, available, tool-capable role models. Remove conflicting Venice auth/endpoint overrides from `models.json`. |
 | `empty API key` / `Pi does not report OpenRouter credentials as ready` | Nothing was stored, or Pi rejected the key. Check `pi auth check --provider openrouter`; re-run to be prompted again. |
 | `pi was installed or detected but cannot now be found on PATH` | Add npm's global `bin` directory to the current shell's `PATH` and re-run. |
-| `configured Pi command … is not executable` | Set `pi.command` in the named configuration file to the detected executable path printed in the error, then re-run. |
+| `configured Pi command … is not executable` | Restore the detected Pi at the path printed in the error, then re-run. |
 | `cannot update ~/.claude.json` | Make the file valid JSON and writable. Unrelated settings are preserved. |
 | `cannot update ~/.claude/settings.json` | Make the file valid JSON and writable. Unrelated settings are preserved. |
 | `cannot update ~/.codex/config.toml` | Make the file writable. Unrelated content is preserved. |
