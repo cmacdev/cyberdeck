@@ -201,6 +201,7 @@ export function createServer(config, { input = process.stdin, output = process.s
   let current = config;
   let tools = buildTools(current);
   let reloadError = null;
+  let announceTools = false;
   let policyStamp = policyFileStampSync(config.configPath);
   let reloadInFlight = null;
   const activeCalls = new Map();
@@ -233,17 +234,17 @@ export function createServer(config, { input = process.stdin, output = process.s
         const stamp = await stat(current.configPath)
           .then((info) => `${info.mtimeMs}:${info.size}`)
           .catch(() => "missing");
-        if (stamp === policyStamp) return;
-        policyStamp = stamp;
+        if (stamp === policyStamp && reloadError === null) return;
         try {
           const next = await loadConfig(current.configPath);
           const previousTools = JSON.stringify(tools);
           current = next;
           tools = buildTools(next);
           reloadError = null;
-          if (JSON.stringify(tools) !== previousTools) {
-            send({ jsonrpc: "2.0", method: "notifications/tools/list_changed" });
-          }
+          policyStamp = await stat(current.configPath)
+            .then((info) => `${info.mtimeMs}:${info.size}`)
+            .catch(() => "missing");
+          if (JSON.stringify(tools) !== previousTools) announceTools = true;
         } catch (error) {
           reloadError = error;
         }
@@ -281,40 +282,41 @@ export function createServer(config, { input = process.stdin, output = process.s
           throw new RpcError(-32602, `Unknown tool: ${String(toolName)}`);
         }
         const profileName = toolName === "research" ? "research" : "implementation";
+        const policy = current;
         if (signal.aborted) return null;
         if (reloadError) {
           return toolResult(
             rejectedResult(
               profileName,
               params.arguments,
-              current,
+              policy,
               new InputError(`Configuration reload failed: ${reloadError.message}`),
             ),
           );
         }
-        if (runningToolCalls >= current.limits.maxConcurrentRuns) {
+        if (runningToolCalls >= policy.limits.maxConcurrentRuns) {
           return toolResult(
             rejectedResult(
               profileName,
               params.arguments,
-              current,
+              policy,
               new InputError(
-                `Concurrent run limit reached (${current.limits.maxConcurrentRuns}); retry after another run completes.`,
+                `Concurrent run limit reached (${policy.limits.maxConcurrentRuns}); retry after another run completes.`,
               ),
             ),
           );
         }
         runningToolCalls += 1;
         try {
-          const structured = await runPi(profileName, params.arguments ?? {}, current, signal);
+          const structured = await runPi(profileName, params.arguments ?? {}, policy, signal);
           if (structured === null || structured.status === "cancelled") return null;
           return toolResult(structured);
         } catch (error) {
           if (signal.aborted) return null;
           if (error instanceof InputError) {
-            return toolResult(rejectedResult(profileName, params.arguments, current, error));
+            return toolResult(rejectedResult(profileName, params.arguments, policy, error));
           }
-          const failed = rejectedResult(profileName, params.arguments, current, error);
+          const failed = rejectedResult(profileName, params.arguments, policy, error);
           failed.status = "failed";
           return toolResult(failed);
         } finally {
@@ -328,7 +330,7 @@ export function createServer(config, { input = process.stdin, output = process.s
         if (!resource) {
           throw new RpcError(-32602, `Unknown resource URI: ${String(params.uri)}`);
         }
-        return { ttlMs: 60000, cacheScope: "private", contents: [resource] };
+        return { ttlMs: 0, cacheScope: "private", contents: [resource] };
       }
       default:
         throw new RpcError(-32601, `Method not found: ${message.method}`);
@@ -372,6 +374,10 @@ export function createServer(config, { input = process.stdin, output = process.s
     try {
       const result = await handleRequest(message, controller.signal);
       if (result !== null) send(resultResponse(id, result));
+      if (announceTools) {
+        announceTools = false;
+        send({ jsonrpc: "2.0", method: "notifications/tools/list_changed" });
+      }
     } catch (error) {
       send(errorResponse(id, error));
     } finally {
