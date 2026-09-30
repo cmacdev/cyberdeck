@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFile, spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import { chmod, mkdir, readFile, readdir, realpath, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, readdir, realpath, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 import { promisify } from "node:util";
@@ -99,9 +99,20 @@ test("Venice install replaces a stale policy and preserves provider credentials"
   policy.profiles.research.modelPatterns.push("z-ai/glm-5.2");
   policy.modelAliases = { venice: { "moonshotai/kimi-k3": "z-ai/glm-5.2" } };
   await writeFile(configPath, JSON.stringify(policy));
+  const pointerPath = path.join(cyberdeckHome, "pi-command");
+  const schemaPath = path.join(cyberdeckHome, "cyberdeck.config.schema.json");
+  await writeFile(pointerPath, "/custom/pi\n");
+  await writeFile(schemaPath, "{\"custom\":true}\n");
   const authPath = path.join(agentDirectory, "auth.json");
   const auth = JSON.parse(await readFile(authPath, "utf8"));
   assert.deepEqual(auth.venice, { type: "api_key", key: inferenceKey });
+  await writeFile(preload, `import { veniceFixture } from ${JSON.stringify(path.join(packageDirectory, "fixtures/venice-api.mjs"))}; globalThis.fetch = veniceFixture({ failPath: "/chat/completions" }).fetch;\n`);
+  const failedAgain = await runWithClosedInput("bash", ["install.sh", "--provider", "venice"], { cwd: packageDirectory, env });
+  assert.equal(failedAgain.code, 1);
+  assert.equal(await readFile(configPath, "utf8"), JSON.stringify(policy));
+  assert.equal(await readFile(pointerPath, "utf8"), "/custom/pi\n");
+  assert.equal(await readFile(schemaPath, "utf8"), "{\"custom\":true}\n");
+  await writeFile(preload, `import { veniceFixture } from ${JSON.stringify(path.join(packageDirectory, "fixtures/venice-api.mjs"))}; globalThis.fetch = veniceFixture().fetch;\n`);
   const repeated = await execFileAsync("bash", ["install.sh"], { cwd: packageDirectory, env });
   assert.match(repeated.stdout, /provider: Venice/);
   assert.match(repeated.stdout, /replaced installed policy/);
@@ -111,6 +122,8 @@ test("Venice install replaces a stale policy and preserves provider credentials"
   assert.deepEqual(replaced.modelAliases, shipped.modelAliases);
   assert.equal(replaced.provider, "venice");
   assert.equal(replaced.pi.stateDirectory, agentDirectory);
+  assert.equal(await readFile(pointerPath, "utf8"), `${path.join(bin, "pi")}\n`);
+  assert.equal((await stat(configPath)).mode & 0o777, 0o600);
   await execFileAsync("bash", ["install.sh", "--provider", "openrouter"], { cwd: packageDirectory, env });
   const switched = JSON.parse(await readFile(configPath, "utf8"));
   assert.equal(switched.provider, "openrouter");

@@ -447,12 +447,6 @@ if [ "$DRY_RUN" -eq 1 ]; then
     note "would create installed policy at $CONFIG_PATH with machine-specific executable paths"
   fi
   note "would record the Pi executable path for Claude Desktop at $PI_POINTER"
-else
-  mkdir -p "$CYBERDECK_HOME"
-  chmod 700 "$CYBERDECK_HOME"
-  printf '%s\n' "$PI_COMMAND" >"$PI_POINTER"
-  chmod 600 "$PI_POINTER"
-  cp "$APP_DIR/cyberdeck.config.schema.json" "$CYBERDECK_HOME/cyberdeck.config.schema.json"
 fi
 
 if [ "$PROVIDER" = venice ]; then
@@ -475,11 +469,16 @@ fi
 fi
 
 if [ "$DRY_RUN" -ne 1 ]; then
+  mkdir -p "$CYBERDECK_HOME"
+  chmod 700 "$CYBERDECK_HOME"
+  printf '%s\n' "$PI_COMMAND" >"$PI_POINTER"
+  chmod 600 "$PI_POINTER"
+  cp "$APP_DIR/cyberdeck.config.schema.json" "$CYBERDECK_HOME/cyberdeck.config.schema.json"
   POLICY_EXISTED=0
   if [ -f "$CONFIG_PATH" ]; then POLICY_EXISTED=1; fi
   SOURCE_CONFIG_PATH="$APP_DIR/cyberdeck.config.json" CONFIG_PATH="$CONFIG_PATH" \
     PI_COMMAND="$PI_COMMAND" CYBERDECK_HOME="$CYBERDECK_HOME" PROVIDER="$PROVIDER" PI_AGENT_DIR="$PI_AGENT_DIR" node -e "$ATOMIC_WRITE"'
-      const { readFileSync } = require("node:fs");
+      const { chmodSync, readFileSync } = require("node:fs");
       const path = require("node:path");
       const config = JSON.parse(readFileSync(process.env.SOURCE_CONFIG_PATH, "utf8"));
       config.provider = process.env.PROVIDER;
@@ -488,6 +487,7 @@ if [ "$DRY_RUN" -ne 1 ]; then
       config.pi.command = process.env.PI_COMMAND;
       config.pi.stateDirectory = process.env.PI_AGENT_DIR;
       atomicWrite(process.env.CONFIG_PATH, JSON.stringify(config, null, 2) + "\n", 0o600);
+      chmodSync(process.env.CONFIG_PATH, 0o600);
     ' || die "cannot update $CONFIG_PATH. Ensure $APP_DIR/cyberdeck.config.json is valid JSON and $CONFIG_PATH is writable, then re-run."
   if [ "$POLICY_EXISTED" -eq 1 ]; then
     note "replaced installed policy at $CONFIG_PATH with the published policy for $PROVIDER"
