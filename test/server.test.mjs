@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { access, readFile, readdir, realpath, stat, writeFile } from "node:fs/promises";
+import { access, readFile, readdir, realpath, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 
@@ -9,6 +9,7 @@ import {
   callArguments,
   fakePiPath,
   isProcessAlive,
+  makeConfig,
   makeFixture,
   packageDirectory,
   sleep,
@@ -145,6 +146,87 @@ test("resources list the catalog and resolved profiles", async (t) => {
   );
   assert.deepEqual(profiles.profiles.research.tools, RESEARCH_TOOLS);
   assert.match(profiles.securityBoundary, /no built-in OS sandbox/i);
+});
+
+test("a replaced policy is reloaded without a client restart", async (t) => {
+  const fixture = await makeFixture(t);
+  const configPath = await fixture.writeConfig("config");
+  const client = startServer(t, configPath, { cwd: fixture.workspace });
+  const before = await client.request("tools/list");
+  const updated = makeConfig(fixture, { limits: { maxTaskCharacters: 4321 } });
+  updated.profiles.research.roles.mechanical.model = "research/model-z";
+  await writeFile(configPath, `${JSON.stringify(updated, null, 2)}\n`);
+  const profiles = JSON.parse(
+    (await client.request("resources/read", { uri: "cyberdeck://profiles" })).contents[0].text,
+  );
+  assert.equal(profiles.profiles.research.roles.mechanical.model, "research/model-z");
+  const after = await client.request("tools/list");
+  assert.notEqual(JSON.stringify(after.tools), JSON.stringify(before.tools));
+  const changed = await client.waitForMessage(
+    (message) => message.method === "notifications/tools/list_changed",
+    1000,
+  );
+  assert.ok(changed, "clients are told to re-fetch tool schemas");
+  await client.request("ping");
+  await sleep(20);
+  assert.equal(
+    client.messages.filter((message) => message.method === "notifications/tools/list_changed").length,
+    1,
+  );
+  const result = await call(client, "research", callArguments(fixture));
+  assert.equal(result.structuredContent.ok, true);
+  assert.equal(result.structuredContent.model, "research/model-z");
+});
+
+test("an in-flight run keeps the policy it started with", async (t) => {
+  const fixture = await makeFixture(t);
+  const configPath = await fixture.writeConfig("config");
+  const pidFile = path.join(fixture.root, "pi.pid");
+  const client = startServer(t, configPath, {
+    cwd: fixture.workspace,
+    env: { FAKE_PI_PIDFILE: pidFile },
+  });
+  const slow = call(client, "research", callArguments(fixture, { task: "FAKE_WAIT" }));
+  for (let attempt = 0; attempt < 50 && !(await access(pidFile).then(() => true, () => false)); attempt += 1) {
+    await sleep(10);
+  }
+  const updated = makeConfig(fixture, { artifactDirectory: path.join(fixture.root, "other-runs") });
+  updated.profiles.research.roles.mechanical.model = "research/model-z";
+  await writeFile(configPath, `${JSON.stringify(updated, null, 2)}\n`);
+  await client.request("ping");
+  const result = await slow;
+  assert.equal(result.structuredContent.model, "research/model-a");
+  assert.equal((await readdir(fixture.artifactDirectory)).length, 1);
+  await assert.rejects(access(path.join(fixture.root, "other-runs")));
+});
+
+test("a deleted policy rejects calls until the file is restored", async (t) => {
+  const fixture = await makeFixture(t);
+  const configPath = await fixture.writeConfig("config");
+  const client = startServer(t, configPath, { cwd: fixture.workspace });
+  await client.request("ping");
+  await rm(configPath);
+  const rejected = await call(client, "research", callArguments(fixture));
+  assert.equal(rejected.structuredContent.status, "rejected");
+  assert.match(rejected.structuredContent.error, /Configuration reload failed/);
+  await writeFile(configPath, `${JSON.stringify(makeConfig(fixture), null, 2)}\n`);
+  const recovered = await call(client, "research", callArguments(fixture));
+  assert.equal(recovered.structuredContent.ok, true);
+});
+
+test("an invalid policy replacement rejects calls until the file is repaired", async (t) => {
+  const fixture = await makeFixture(t);
+  const configPath = await fixture.writeConfig("config");
+  const client = startServer(t, configPath, { cwd: fixture.workspace });
+  await client.request("ping");
+  await writeFile(configPath, "{ not json\n");
+  const rejected = await call(client, "research", callArguments(fixture));
+  assert.equal(rejected.structuredContent.status, "rejected");
+  assert.match(rejected.structuredContent.error, /Configuration reload failed: Cannot read configuration/);
+  await assert.rejects(access(fixture.artifactDirectory), "no run directory was created");
+  await writeFile(configPath, `${JSON.stringify(makeConfig(fixture, { limits: { maxTaskCharacters: 9999 } }), null, 2)}\n`);
+  const recovered = await call(client, "research", callArguments(fixture));
+  assert.equal(recovered.structuredContent.ok, true);
 });
 
 test("protocol errors use the JSON-RPC and MCP codes", async (t) => {
@@ -331,7 +413,7 @@ test("working_directory must be an existing absolute directory inside a root", a
     ["relative", "must be an absolute path"],
     [path.join(fixture.workspace, "missing"), "does not exist"],
     [fixture.contextFile, "is not a directory"],
-    [fixture.outside, "outside configured workspace roots.*edit workspaceRoots in .*config.*restart"],
+    [fixture.outside, "outside configured workspace roots.*edit workspaceRoots in .*config.*reloads that file"],
     [path.join(fixture.workspace, "x".repeat(4096)), "cannot exceed 4096"],
   ];
   for (const [workingDirectory, expected] of cases) {

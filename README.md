@@ -92,7 +92,7 @@ The installer writes exactly these locations:
 | `~/.cyberdeck/cyberdeck.mcpb` | macOS with Claude Desktop installed: MCP bundle; the installer opens it and Claude asks for a workspace root and approval |
 | `~/.cyberdeck/claude-desktop.config.json`, `~/.cyberdeck/claude-desktop-runs` | Written by the Claude Desktop launcher on each start: the installed policy scoped to the chosen workspace root, and its artifacts |
 
-Stops, manual setup, update, and uninstall: [install-helper.md](install-helper.md). Install and uninstall do not change Pi's interactive settings; each run supplies its own model, thinking, and telemetry settings. Restart the client. Invoke `/deck …` (Claude Code), `$deck …` (Codex CLI), or `@deck …` (ChatGPT Desktop). The skill chooses `research` or `implement` and a role, and calls Cyberdeck with the absolute project directory.
+Stops, manual setup, update, and uninstall: [install-helper.md](install-helper.md). Install and uninstall do not change Pi's interactive settings; each run supplies its own model, thinking, and telemetry settings. Restart the client after a first install so it spawns the server. Clients bound to `~/.cyberdeck/cyberdeck.config.json` pick up a reinstall's replaced policy without a restart. Claude Desktop uses a derived config written at launch, so restart that app after a reinstall. Invoke `/deck …` (Claude Code), `$deck …` (Codex CLI), or `@deck …` (ChatGPT Desktop). The skill chooses `research` or `implement` and a role, and calls Cyberdeck with the absolute project directory.
 
 ## Configure
 

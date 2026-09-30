@@ -100,7 +100,7 @@ async function canonicalInsideRoot(value, config, label, expectDirectory) {
   }
   if (!config.workspaceRoots.some((root) => isWithinRoot(canonical, root))) {
     inputFail(
-      `${label} is outside configured workspace roots: ${canonical}. Roots: ${config.workspaceRoots.join(", ")}. To widen them, edit workspaceRoots in ${config.configPath} and restart the MCP client.`,
+      `${label} is outside configured workspace roots: ${canonical}. Roots: ${config.workspaceRoots.join(", ")}. To widen them, edit workspaceRoots in ${config.configPath}; this server reloads that file.`,
     );
   }
   return canonical;
