@@ -153,9 +153,9 @@ if [ "$UNINSTALL" -eq 1 ]; then
     note "Claude Code: cyberdeck is not registered; nothing to remove"
   fi
 
-  if [ -f "$CLAUDE_SETTINGS" ] && grep -q 'mcp__cyberdeck__' "$CLAUDE_SETTINGS"; then
+  if [ -f "$CLAUDE_SETTINGS" ] && grep -qE 'mcp__cyberdeck__|"mcp__Cyberdeck"' "$CLAUDE_SETTINGS"; then
     if [ "$DRY_RUN" -eq 1 ]; then
-      note "Claude Code: would remove the mcp__cyberdeck__* permission rules from $CLAUDE_SETTINGS"
+      note "Claude Code: would remove the cyberdeck permission rules from $CLAUDE_SETTINGS"
     else
       CLAUDE_SETTINGS="$CLAUDE_SETTINGS" node -e "$ATOMIC_WRITE"'
         const { readFileSync } = require("node:fs");
@@ -164,12 +164,12 @@ if [ "$UNINSTALL" -eq 1 ]; then
         for (const list of Object.values(settings.permissions ?? {})) {
           if (!Array.isArray(list)) continue;
           for (let i = list.length - 1; i >= 0; i -= 1) {
-            if (typeof list[i] === "string" && list[i].startsWith("mcp__cyberdeck__")) list.splice(i, 1);
+            if (typeof list[i] === "string" && (list[i].startsWith("mcp__cyberdeck__") || list[i] === "mcp__Cyberdeck")) list.splice(i, 1);
           }
         }
         atomicWrite(file, JSON.stringify(settings, null, 2) + "\n", 0o644);
       ' || die "cannot update $CLAUDE_SETTINGS. Ensure it contains valid JSON and is writable, then re-run."
-      note "Claude Code: removed the mcp__cyberdeck__* permission rules"
+      note "Claude Code: removed the cyberdeck permission rules"
     fi
   else
     note "Claude Code: no cyberdeck permission rules; nothing to remove"
@@ -675,6 +675,25 @@ if [ "$PLATFORM" = "Darwin" ]; then
       else
         note "ACTION REQUIRED: Claude Desktop could not open $MCPB_PATH; install it from Settings > Extensions > Advanced settings > Install Extension"
       fi
+    fi
+    if [ -f "$CLAUDE_SETTINGS" ] && grep -q '"mcp__Cyberdeck"' "$CLAUDE_SETTINGS"; then
+      note "Claude Code: deny rule for the Claude Desktop extension already present in $CLAUDE_SETTINGS; left untouched"
+    elif [ "$DRY_RUN" -eq 1 ]; then
+      note "Claude Code: would add a deny rule for the Claude Desktop extension (mcp__Cyberdeck) to $CLAUDE_SETTINGS"
+    else
+      CLAUDE_SETTINGS="$CLAUDE_SETTINGS" node -e "$ATOMIC_WRITE"'
+        const { mkdirSync, readFileSync } = require("node:fs");
+        const path = require("node:path");
+        const file = process.env.CLAUDE_SETTINGS;
+        mkdirSync(path.dirname(file), { recursive: true });
+        const settings = existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : {};
+        settings.permissions = settings.permissions ?? {};
+        const rules = settings.permissions.deny ?? [];
+        if (!rules.includes("mcp__Cyberdeck")) rules.push("mcp__Cyberdeck");
+        settings.permissions.deny = rules;
+        atomicWrite(file, JSON.stringify(settings, null, 2) + "\n", 0o644);
+      ' || die "cannot update $CLAUDE_SETTINGS. Ensure it contains valid JSON and is writable, then re-run."
+      note "Claude Code: added a deny rule for the Claude Desktop extension (mcp__Cyberdeck)"
     fi
   else
     note "Claude Desktop not found; skipped its MCP bundle (the installer never installs desktop apps)"

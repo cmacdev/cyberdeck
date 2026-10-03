@@ -82,7 +82,7 @@ The installer writes exactly these locations:
 | `~/.cyberdeck/cyberdeck.config.json` | Published policy for the selected provider, with absolute Pi executable/state paths and run directory (mode 600; replaced on re-run) |
 | `~/.cyberdeck/cyberdeck.config.schema.json`, `~/.cyberdeck/pi-command` | Schema copy for editors; Pi path for Claude Desktop |
 | `~/.claude.json` | User-scope `cyberdeck` stdio server (`claude mcp add` when the CLI is present) |
-| `~/.claude/settings.json` | `permissions.allow: mcp__cyberdeck__research`, `permissions.ask: mcp__cyberdeck__implement` |
+| `~/.claude/settings.json` | `permissions.allow: mcp__cyberdeck__research`, `permissions.ask: mcp__cyberdeck__implement`, `permissions.deny: mcp__Cyberdeck (macOS with Claude Desktop)` |
 | `~/.codex/config.toml` | `[mcp_servers.cyberdeck]` block (research `auto`, implement `prompt`); shared by Codex CLI and ChatGPT Desktop |
 | `~/.claude/skills/deck`, `~/.codex/skills/deck` | The `deck` skill with a `.cyberdeck-managed` marker; an unmanaged skill of that name is never overwritten |
 | `~/.pi/agent/auth.json` | Selected provider's inference key; unrelated credentials preserved |

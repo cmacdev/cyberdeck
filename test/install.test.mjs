@@ -45,6 +45,7 @@ test("codex-only install and uninstall never invoke or restore Claude integratio
   const env = { ...process.env, HOME: fixture.root, CYBERDECK_HOME: path.join(fixture.root, ".cyberdeck"), PI_CODING_AGENT_DIR: path.join(fixture.root, ".pi/agent"), PATH: `${bin}:${testSystemPath}` };
   await execFileAsync("bash", ["install.sh", "--codex-only", "--provider", "openrouter"], { cwd: packageDirectory, env });
   assert.equal(existsSync(path.join(fixture.root, ".claude.json")), false);
+  assert.equal(existsSync(path.join(fixture.root, ".claude", "settings.json")), false);
   assert.equal(existsSync(path.join(fixture.root, ".claude/skills/deck")), false);
   assert.ok(existsSync(path.join(fixture.root, ".codex/skills/deck/SKILL.md")));
   await writeFile(path.join(fixture.root, ".claude.json"), JSON.stringify({ mcpServers: { cyberdeck: {}, other: {} } }));
@@ -193,6 +194,7 @@ test("the Linux dry-run configures only Claude Code and the default Codex locati
   assert.match(stdout, /Claude Code: would install the deck skill at .*\.claude\/skills\/deck/);
   assert.match(stdout, /Codex and ChatGPT Desktop: would install the deck skill at .*\.codex\/skills\/deck/);
   assert.match(stdout, /macOS desktop integrations skipped on Linux/);
+  assert.doesNotMatch(stdout, /mcp__Cyberdeck/);
   assert.doesNotMatch(stdout, /OpenCode|Grok Build/);
   assert.doesNotMatch(stdout, /would run: open|would run: zip/);
 });
@@ -225,7 +227,60 @@ test("the macOS dry-run uses shared Codex config and prepares only Claude Deskto
   assert.equal(stderr, "");
   assert.match(stdout, /ChatGPT Desktop: uses the Codex registration/);
   assert.match(stdout, /Claude Desktop: would build .*cyberdeck\.mcpb and open its installation dialog/);
+  assert.match(
+    stdout,
+    /Claude Code: would add a deny rule for the Claude Desktop extension \(mcp__Cyberdeck\) to .*settings\.json/,
+  );
+  assert.equal(existsSync(path.join(fixture.root, ".claude", "settings.json")), false);
   assert.doesNotMatch(stdout, /desktop app detection or installation was attempted/);
+});
+
+test("a macOS install adds the Desktop deny rule even when allow and ask rules already exist", async (t) => {
+  const fixture = await makeFixture(t);
+  const bin = path.join(fixture.root, "bin");
+  await mkdir(bin);
+  for (const [name, script] of [
+    ["pi", "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo 'pi 0.84.2'; else echo ready; fi\n"],
+    ["uname", "#!/bin/sh\necho Darwin\n"],
+    ["open", "#!/bin/sh\nif [ \"$1\" = \"-Ra\" ]; then exit 0; fi\nexit 1\n"],
+    ["zip", "#!/bin/sh\nexit 0\n"],
+  ]) {
+    const file = path.join(bin, name);
+    await writeFile(file, script);
+    await chmod(file, 0o755);
+  }
+  const settingsPath = path.join(fixture.root, ".claude", "settings.json");
+  await mkdir(path.dirname(settingsPath), { recursive: true });
+  await writeFile(
+    settingsPath,
+    `${JSON.stringify({
+      permissions: {
+        allow: ["mcp__cyberdeck__research", "Bash(ls*)"],
+        ask: ["mcp__cyberdeck__implement"],
+        deny: ["Bash(rm *)"],
+      },
+    }, null, 2)}\n`,
+  );
+  const env = {
+    ...process.env,
+    HOME: fixture.root,
+    CYBERDECK_HOME: path.join(fixture.root, ".cyberdeck"),
+    PATH: `${bin}:${testSystemPath}`,
+  };
+  delete env.OPENROUTER_API_KEY;
+  const installed = await execFileAsync("bash", ["install.sh"], { cwd: packageDirectory, env });
+  assert.match(installed.stdout, /added a deny rule for the Claude Desktop extension \(mcp__Cyberdeck\)/);
+  assert.doesNotMatch(installed.stdout, /Complete the Cyberdeck install in Claude Desktop/);
+  const permissions = JSON.parse(await readFile(settingsPath, "utf8"));
+  assert.deepEqual(permissions.permissions.allow, ["mcp__cyberdeck__research", "Bash(ls*)"]);
+  assert.deepEqual(permissions.permissions.ask, ["mcp__cyberdeck__implement"]);
+  assert.deepEqual(permissions.permissions.deny, ["Bash(rm *)", "mcp__Cyberdeck"]);
+  const repeated = await execFileAsync("bash", ["install.sh"], { cwd: packageDirectory, env });
+  assert.match(repeated.stdout, /deny rule for the Claude Desktop extension already present/);
+  assert.deepEqual(JSON.parse(await readFile(settingsPath, "utf8")).permissions.deny, [
+    "Bash(rm *)",
+    "mcp__Cyberdeck",
+  ]);
 });
 
 test("an install without client binaries still writes the default Claude and Codex configs", async (t) => {
@@ -270,6 +325,7 @@ test("an install without client binaries still writes the default Claude and Cod
   );
   assert.ok(permissions.permissions.allow.includes("mcp__cyberdeck__research"));
   assert.ok(permissions.permissions.ask.includes("mcp__cyberdeck__implement"));
+  assert.equal(permissions.permissions.deny, undefined);
   const codex = await readFile(path.join(fixture.root, ".codex", "config.toml"), "utf8");
   assert.match(codex, /^\[mcp_servers\.cyberdeck\]$/m);
   const models = JSON.parse(await readFile(path.join(fixture.root, ".pi", "agent", "models.json"), "utf8"));
@@ -316,7 +372,7 @@ test("the uninstall reverses the install and preserves unrelated configuration",
   await mkdir(path.join(fixture.root, ".claude"), { recursive: true });
   await writeFile(
     path.join(fixture.root, ".claude", "settings.json"),
-    `${JSON.stringify({ permissions: { allow: ["Bash(ls*)"] } }, null, 2)}\n`,
+    `${JSON.stringify({ permissions: { allow: ["Bash(ls*)"], deny: ["Bash(rm *)", "mcp__Cyberdeck"] } }, null, 2)}\n`,
   );
   const modelsPath = path.join(fixture.root, ".pi", "agent", "models.json");
   await mkdir(path.dirname(modelsPath), { recursive: true });
@@ -355,6 +411,7 @@ test("the uninstall reverses the install and preserves unrelated configuration",
   );
   assert.deepEqual(permissions.permissions.allow, ["Bash(ls*)"]);
   assert.deepEqual(permissions.permissions.ask, []);
+  assert.deepEqual(permissions.permissions.deny, ["Bash(rm *)"]);
   const codex = await readFile(path.join(fixture.root, ".codex", "config.toml"), "utf8");
   assert.match(codex, /^model = "keep-me"$/m);
   assert.doesNotMatch(codex, /cyberdeck/);
