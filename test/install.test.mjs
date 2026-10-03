@@ -100,9 +100,7 @@ test("Venice install replaces a stale policy and preserves provider credentials"
   policy.profiles.research.modelPatterns.push("z-ai/glm-5.2");
   policy.modelAliases = { venice: { "moonshotai/kimi-k3": "z-ai/glm-5.2" } };
   await writeFile(configPath, JSON.stringify(policy));
-  const pointerPath = path.join(cyberdeckHome, "pi-command");
   const schemaPath = path.join(cyberdeckHome, "cyberdeck.config.schema.json");
-  await writeFile(pointerPath, "/custom/pi\n");
   await writeFile(schemaPath, "{\"custom\":true}\n");
   const authPath = path.join(agentDirectory, "auth.json");
   const auth = JSON.parse(await readFile(authPath, "utf8"));
@@ -111,7 +109,6 @@ test("Venice install replaces a stale policy and preserves provider credentials"
   const failedAgain = await runWithClosedInput("bash", ["install.sh", "--provider", "venice"], { cwd: packageDirectory, env });
   assert.equal(failedAgain.code, 1);
   assert.equal(await readFile(configPath, "utf8"), JSON.stringify(policy));
-  assert.equal(await readFile(pointerPath, "utf8"), "/custom/pi\n");
   assert.equal(await readFile(schemaPath, "utf8"), "{\"custom\":true}\n");
   await writeFile(preload, `import { veniceFixture } from ${JSON.stringify(path.join(packageDirectory, "fixtures/venice-api.mjs"))}; globalThis.fetch = veniceFixture().fetch;\n`);
   const repeated = await execFileAsync("bash", ["install.sh"], { cwd: packageDirectory, env });
@@ -123,7 +120,6 @@ test("Venice install replaces a stale policy and preserves provider credentials"
   assert.deepEqual(replaced.modelAliases, shipped.modelAliases);
   assert.equal(replaced.provider, "venice");
   assert.equal(replaced.pi.stateDirectory, agentDirectory);
-  assert.equal(await readFile(pointerPath, "utf8"), `${path.join(bin, "pi")}\n`);
   assert.equal((await stat(configPath)).mode & 0o777, 0o600);
   await execFileAsync("bash", ["install.sh", "--provider", "openrouter"], { cwd: packageDirectory, env });
   const switched = JSON.parse(await readFile(configPath, "utf8"));
@@ -199,7 +195,7 @@ test("the Linux dry-run configures only Claude Code and the default Codex locati
   assert.doesNotMatch(stdout, /would run: open|would run: zip/);
 });
 
-test("the macOS dry-run uses shared Codex config and prepares only Claude Desktop", async (t) => {
+test("the macOS dry-run uses shared Codex config and never prepares Claude Desktop", async (t) => {
   const fixture = await makeFixture(t);
   const bin = path.join(fixture.root, "bin");
   await mkdir(bin);
@@ -207,7 +203,6 @@ test("the macOS dry-run uses shared Codex config and prepares only Claude Deskto
     ["pi", "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo 'pi 0.84.2'; else echo ready; fi\n"],
     ["uname", "#!/bin/sh\necho Darwin\n"],
     ["open", "#!/bin/sh\nexit 0\n"],
-    ["zip", "#!/bin/sh\nexit 0\n"],
   ]) {
     const file = path.join(bin, name);
     await writeFile(file, script);
@@ -226,61 +221,56 @@ test("the macOS dry-run uses shared Codex config and prepares only Claude Deskto
 
   assert.equal(stderr, "");
   assert.match(stdout, /ChatGPT Desktop: uses the Codex registration/);
-  assert.match(stdout, /Claude Desktop: would build .*cyberdeck\.mcpb and open its installation dialog/);
-  assert.match(
-    stdout,
-    /Claude Code: would add a deny rule for the Claude Desktop extension \(mcp__Cyberdeck\) to .*settings\.json/,
-  );
-  assert.equal(existsSync(path.join(fixture.root, ".claude", "settings.json")), false);
+  assert.doesNotMatch(stdout, /Claude Desktop|mcpb|mcp__Cyberdeck/);
   assert.doesNotMatch(stdout, /desktop app detection or installation was attempted/);
 });
 
-test("a macOS install adds the Desktop deny rule even when allow and ask rules already exist", async (t) => {
+test("a macOS install retires the Claude Desktop bundle and its deny rule", async (t) => {
   const fixture = await makeFixture(t);
   const bin = path.join(fixture.root, "bin");
   await mkdir(bin);
   for (const [name, script] of [
     ["pi", "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo 'pi 0.84.2'; else echo ready; fi\n"],
     ["uname", "#!/bin/sh\necho Darwin\n"],
-    ["open", "#!/bin/sh\nif [ \"$1\" = \"-Ra\" ]; then exit 0; fi\nexit 1\n"],
-    ["zip", "#!/bin/sh\nexit 0\n"],
+    ["open", "#!/bin/sh\nif [ \"$1\" = \"-Ra\" ]; then exit 0; fi\necho 'test failure: install.sh must not open a bundle' >&2\nexit 1\n"],
   ]) {
     const file = path.join(bin, name);
     await writeFile(file, script);
     await chmod(file, 0o755);
   }
+  const cyberdeckHome = path.join(fixture.root, ".cyberdeck");
+  const env = {
+    ...process.env,
+    HOME: fixture.root,
+    CYBERDECK_HOME: cyberdeckHome,
+    PATH: `${bin}:${testSystemPath}`,
+  };
+  delete env.OPENROUTER_API_KEY;
+  await execFileAsync("bash", ["install.sh"], { cwd: packageDirectory, env });
+  const bundle = path.join(cyberdeckHome, "cyberdeck.mcpb");
+  await writeFile(bundle, "stale");
   const settingsPath = path.join(fixture.root, ".claude", "settings.json");
-  await mkdir(path.dirname(settingsPath), { recursive: true });
   await writeFile(
     settingsPath,
     `${JSON.stringify({
       permissions: {
         allow: ["mcp__cyberdeck__research", "Bash(ls*)"],
         ask: ["mcp__cyberdeck__implement"],
-        deny: ["Bash(rm *)"],
+        deny: ["Bash(rm *)", "mcp__Cyberdeck"],
       },
     }, null, 2)}\n`,
   );
-  const env = {
-    ...process.env,
-    HOME: fixture.root,
-    CYBERDECK_HOME: path.join(fixture.root, ".cyberdeck"),
-    PATH: `${bin}:${testSystemPath}`,
-  };
-  delete env.OPENROUTER_API_KEY;
   const installed = await execFileAsync("bash", ["install.sh"], { cwd: packageDirectory, env });
-  assert.match(installed.stdout, /added a deny rule for the Claude Desktop extension \(mcp__Cyberdeck\)/);
-  assert.doesNotMatch(installed.stdout, /Complete the Cyberdeck install in Claude Desktop/);
+  assert.equal(installed.stderr, "");
+  assert.match(installed.stdout, /removed the obsolete mcp__Cyberdeck deny rule/);
+  assert.match(installed.stdout, /ACTION REQUIRED: remove the Cyberdeck extension in Claude Desktop/);
+  assert.equal(existsSync(bundle), false);
   const permissions = JSON.parse(await readFile(settingsPath, "utf8"));
   assert.deepEqual(permissions.permissions.allow, ["mcp__cyberdeck__research", "Bash(ls*)"]);
   assert.deepEqual(permissions.permissions.ask, ["mcp__cyberdeck__implement"]);
-  assert.deepEqual(permissions.permissions.deny, ["Bash(rm *)", "mcp__Cyberdeck"]);
+  assert.deepEqual(permissions.permissions.deny, ["Bash(rm *)"]);
   const repeated = await execFileAsync("bash", ["install.sh"], { cwd: packageDirectory, env });
-  assert.match(repeated.stdout, /deny rule for the Claude Desktop extension already present/);
-  assert.deepEqual(JSON.parse(await readFile(settingsPath, "utf8")).permissions.deny, [
-    "Bash(rm *)",
-    "mcp__Cyberdeck",
-  ]);
+  assert.doesNotMatch(repeated.stdout, /mcp__Cyberdeck|ACTION REQUIRED/);
 });
 
 test("an install without client binaries still writes the default Claude and Codex configs", async (t) => {
@@ -680,99 +670,10 @@ test("the installer refuses to overwrite an unmanaged deck skill", async (t) => 
   assert.equal(await readFile(path.join(existing, "SKILL.md"), "utf8"), "user-owned\n");
 });
 
-test("the Claude Desktop bundle manifest is macOS-only and collects a workspace root", async () => {
-  const manifest = JSON.parse(
-    await readFile(path.join(packageDirectory, "desktop", "claude-manifest.json"), "utf8"),
-  );
-  const pkg = JSON.parse(await readFile(path.join(packageDirectory, "package.json"), "utf8"));
-  assert.equal(manifest.manifest_version, "0.3");
-  assert.equal(manifest.version, pkg.version);
-  assert.equal(manifest.server.type, "node");
-  assert.equal(manifest.server.entry_point, "desktop/claude-server.mjs");
-  assert.deepEqual(manifest.compatibility.platforms, ["darwin"]);
-  assert.equal(manifest.user_config.workspace_root.type, "directory");
-  assert.equal(manifest.user_config.workspace_root.required, true);
-  assert.equal(
-    manifest.server.mcp_config.env.CYBERDECK_WORKSPACE_ROOT,
-    "${user_config.workspace_root}",
-  );
-  assert.ok(manifest.privacy_policies.includes("https://openrouter.ai/privacy"));
-});
-
 test("the installer contains no OpenCode or Grok Build registration and no hardcoded model IDs", async () => {
   const installer = await readFile(path.join(packageDirectory, "install.sh"), "utf8");
   assert.doesNotMatch(installer, /opencode|grok mcp|\.grok/i);
   assert.doesNotMatch(installer, /x-ai\/|moonshotai\/|deepseek\//);
-});
-
-test("the Claude Desktop launcher prefers the installed policy", async (t) => {
-  const fixture = await makeFixture(t);
-  const home = path.join(fixture.root, "home");
-  const cyberdeckHome = path.join(home, ".cyberdeck");
-  await mkdir(cyberdeckHome, { recursive: true });
-  const pi = path.join(fixture.root, "pi");
-  await writeFile(pi, "#!/bin/sh\nexit 0\n");
-  await chmod(pi, 0o755);
-  await writeFile(path.join(cyberdeckHome, "pi-command"), `${pi}\n`);
-  const policy = JSON.parse(
-    await readFile(path.join(packageDirectory, "cyberdeck.config.json"), "utf8"),
-  );
-  delete policy.$schema;
-  policy.limits.maxTaskCharacters = 1234;
-  await writeFile(
-    path.join(cyberdeckHome, "cyberdeck.config.json"),
-    `${JSON.stringify(policy, null, 2)}\n`,
-  );
-
-  const { code, stderr } = await runWithClosedInput(
-    process.execPath,
-    [path.join(packageDirectory, "desktop", "claude-server.mjs")],
-    {
-      cwd: fixture.workspace,
-      env: { ...process.env, HOME: home, CYBERDECK_WORKSPACE_ROOT: fixture.workspace },
-    },
-  );
-
-  assert.equal(code, 0);
-  assert.equal(stderr, "");
-  const generated = JSON.parse(
-    await readFile(path.join(cyberdeckHome, "claude-desktop.config.json"), "utf8"),
-  );
-  assert.equal(generated.limits.maxTaskCharacters, 1234, "installed policy edits reach Claude Desktop");
-  assert.deepEqual(generated.workspaceRoots, [fixture.workspace]);
-});
-
-test("the Claude Desktop launcher creates a scoped config with the recorded Pi path", async (t) => {
-  const fixture = await makeFixture(t);
-  const home = path.join(fixture.root, "home");
-  const cyberdeckHome = path.join(home, ".cyberdeck");
-  await mkdir(cyberdeckHome, { recursive: true });
-  const pi = path.join(fixture.root, "pi");
-  await writeFile(pi, "#!/bin/sh\nexit 0\n");
-  await chmod(pi, 0o755);
-  await writeFile(path.join(cyberdeckHome, "pi-command"), `${pi}\n`);
-
-  const { code, stderr } = await runWithClosedInput(
-    process.execPath,
-    [path.join(packageDirectory, "desktop", "claude-server.mjs")],
-    {
-      cwd: fixture.workspace,
-      env: {
-        ...process.env,
-        HOME: home,
-        CYBERDECK_WORKSPACE_ROOT: fixture.workspace,
-      },
-    },
-  );
-
-  assert.equal(code, 0);
-  assert.equal(stderr, "");
-  const generated = JSON.parse(
-    await readFile(path.join(cyberdeckHome, "claude-desktop.config.json"), "utf8"),
-  );
-  assert.deepEqual(generated.workspaceRoots, [fixture.workspace]);
-  assert.equal(generated.pi.command, pi);
-  assert.equal(generated.artifactDirectory, path.join(cyberdeckHome, "claude-desktop-runs"));
 });
 
 test("Herdr opt-in installs and updates only its managed coordinator and preserves Pi settings", async (t) => {

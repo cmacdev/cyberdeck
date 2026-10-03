@@ -12,12 +12,12 @@ usage() {
   cat <<EOF
 Usage: bash install.sh [--provider openrouter|venice] [--codex-only] [--herdr] [--dry-run] [--pin-pi] [--uninstall]
 
-Idempotent and sudo-free. Registers Cyberdeck with Claude Code and Codex (plus Claude
-Desktop and ChatGPT Desktop on macOS), installs Pi $PINNED_PI only when pi is absent
+Idempotent and sudo-free. Registers Cyberdeck with Claude Code and Codex (plus ChatGPT
+Desktop on macOS), installs Pi $PINNED_PI only when pi is absent
 (--pin-pi forces that version), and stores the selected provider key in Pi's auth store only
 when Pi has none. Venice requires an inference key restricted to private models.
 Piped runs clone CYBERDECK_REPO_URL into CYBERDECK_HOME/app.
---codex-only skips Claude installation and never invokes its CLI or app.
+--codex-only skips Claude installation and never invokes its CLI.
 --herdr installs the Pi coordinator extension; requires an existing Herdr installation.
 --dry-run prints the plan; --uninstall leaves Pi, its auth store, and provider settings.
 EOF
@@ -79,8 +79,7 @@ tty_usable() {
   ( : </dev/tty ) 2>/dev/null
 }
 is_cyberdeck_home() {
-  [ -f "$CYBERDECK_HOME/pi-command" ] || [ -f "$CYBERDECK_HOME/cyberdeck.config.json" ] \
-    || [ -f "$CYBERDECK_HOME/app/bin/cyberdeck-mcp.mjs" ]
+  [ -f "$CYBERDECK_HOME/cyberdeck.config.json" ] || [ -f "$CYBERDECK_HOME/app/bin/cyberdeck-mcp.mjs" ]
 }
 CLAUDE_CONFIG="$HOME/.claude.json"
 CLAUDE_SETTINGS="$HOME/.claude/settings.json"
@@ -439,7 +438,6 @@ else
 fi
 
 CONFIG_PATH="$CYBERDECK_HOME/cyberdeck.config.json"
-PI_POINTER="$CYBERDECK_HOME/pi-command"
 
 if [ "$PROVIDER" = venice ]; then
 if [ "$DRY_RUN" -eq 1 ]; then
@@ -466,7 +464,6 @@ if [ "$DRY_RUN" -eq 1 ]; then
   else
     note "would create installed policy at $CONFIG_PATH with machine-specific executable paths"
   fi
-  note "would record the Pi executable path for Claude Desktop at $PI_POINTER"
 else
   mkdir -p "$CYBERDECK_HOME"
   chmod 700 "$CYBERDECK_HOME"
@@ -485,8 +482,6 @@ else
       atomicWrite(process.env.CONFIG_PATH, JSON.stringify(config, null, 2) + "\n", 0o600);
       chmodSync(process.env.CONFIG_PATH, 0o600);
     ' || die "cannot update $CONFIG_PATH. Ensure $APP_DIR/cyberdeck.config.json is valid JSON and $CONFIG_PATH is writable, then re-run."
-  printf '%s\n' "$PI_COMMAND" >"$PI_POINTER"
-  chmod 600 "$PI_POINTER"
   cp "$APP_DIR/cyberdeck.config.schema.json" "$CYBERDECK_HOME/cyberdeck.config.schema.json"
   if [ "$POLICY_EXISTED" -eq 1 ]; then
     note "replaced installed policy at $CONFIG_PATH with the published policy for $PROVIDER"
@@ -555,6 +550,22 @@ else
     atomicWrite(file, JSON.stringify(settings, null, 2) + "\n", 0o644);
   ' || die "cannot update $CLAUDE_SETTINGS. Ensure it contains valid JSON and is writable, then re-run."
   note "Claude Code: permission rules added (allow research, ask implement)"
+fi
+
+if [ -f "$CLAUDE_SETTINGS" ] && grep -q '"mcp__Cyberdeck"' "$CLAUDE_SETTINGS"; then
+  if [ "$DRY_RUN" -eq 1 ]; then
+    note "Claude Code: would remove the obsolete mcp__Cyberdeck deny rule from $CLAUDE_SETTINGS"
+  else
+    CLAUDE_SETTINGS="$CLAUDE_SETTINGS" node -e "$ATOMIC_WRITE"'
+      const { readFileSync } = require("node:fs");
+      const file = process.env.CLAUDE_SETTINGS;
+      const settings = JSON.parse(readFileSync(file, "utf8"));
+      const deny = settings.permissions?.deny;
+      if (Array.isArray(deny)) settings.permissions.deny = deny.filter((rule) => rule !== "mcp__Cyberdeck");
+      atomicWrite(file, JSON.stringify(settings, null, 2) + "\n", 0o644);
+    ' || die "cannot update $CLAUDE_SETTINGS. Ensure it contains valid JSON and is writable, then re-run."
+    note "Claude Code: removed the obsolete mcp__Cyberdeck deny rule"
+  fi
 fi
 fi
 
@@ -648,55 +659,9 @@ if [ "$PLATFORM" = "Darwin" ]; then
 
   if [ "$CODEX_ONLY" -eq 1 ]; then
     note "Claude integrations skipped (--codex-only)"
-  elif command -v open >/dev/null 2>&1 && open -Ra "Claude" >/dev/null 2>&1; then
-    command -v zip >/dev/null 2>&1 || die "zip is required to build the Claude Desktop MCP bundle on macOS. Install the Xcode command-line tools and re-run."
-    MCPB_STAGE="$CYBERDECK_HOME/.mcpb-stage"
-    MCPB_PATH="$CYBERDECK_HOME/cyberdeck.mcpb"
-    if [ "$DRY_RUN" -eq 1 ]; then
-      note "Claude Desktop: would build $MCPB_PATH and open its installation dialog"
-    else
-      rm -rf "$MCPB_STAGE"
-      mkdir -p "$MCPB_STAGE"
-      cp "$APP_DIR/desktop/claude-manifest.json" "$MCPB_STAGE/manifest.json"
-      cp -R "$APP_DIR/bin" "$APP_DIR/src" "$APP_DIR/desktop" "$MCPB_STAGE/"
-      cp "$APP_DIR/cyberdeck.config.json" "$APP_DIR/cyberdeck.config.schema.json" \
-        "$APP_DIR/package.json" "$APP_DIR/LICENSE" "$MCPB_STAGE/"
-      rm -f "$MCPB_PATH"
-      (cd "$MCPB_STAGE" && zip -qr "$MCPB_PATH" .)
-      rm -rf "$MCPB_STAGE"
-      if open "$MCPB_PATH"; then
-        note "Claude Desktop: opened $MCPB_PATH; select a workspace root and approve installation in Claude"
-        if tty_usable; then
-          printf "Complete the Cyberdeck install in Claude Desktop, then press Return here: " >/dev/tty
-          IFS= read -r _ </dev/tty || true
-        else
-          note "ACTION REQUIRED: complete the open Claude Desktop installation dialog before using Cyberdeck"
-        fi
-      else
-        note "ACTION REQUIRED: Claude Desktop could not open $MCPB_PATH; install it from Settings > Extensions > Advanced settings > Install Extension"
-      fi
-    fi
-    if [ -f "$CLAUDE_SETTINGS" ] && grep -q '"mcp__Cyberdeck"' "$CLAUDE_SETTINGS"; then
-      note "Claude Code: deny rule for the Claude Desktop extension already present in $CLAUDE_SETTINGS; left untouched"
-    elif [ "$DRY_RUN" -eq 1 ]; then
-      note "Claude Code: would add a deny rule for the Claude Desktop extension (mcp__Cyberdeck) to $CLAUDE_SETTINGS"
-    else
-      CLAUDE_SETTINGS="$CLAUDE_SETTINGS" node -e "$ATOMIC_WRITE"'
-        const { mkdirSync, readFileSync } = require("node:fs");
-        const path = require("node:path");
-        const file = process.env.CLAUDE_SETTINGS;
-        mkdirSync(path.dirname(file), { recursive: true });
-        const settings = existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : {};
-        settings.permissions = settings.permissions ?? {};
-        const rules = settings.permissions.deny ?? [];
-        if (!rules.includes("mcp__Cyberdeck")) rules.push("mcp__Cyberdeck");
-        settings.permissions.deny = rules;
-        atomicWrite(file, JSON.stringify(settings, null, 2) + "\n", 0o644);
-      ' || die "cannot update $CLAUDE_SETTINGS. Ensure it contains valid JSON and is writable, then re-run."
-      note "Claude Code: added a deny rule for the Claude Desktop extension (mcp__Cyberdeck)"
-    fi
-  else
-    note "Claude Desktop not found; skipped its MCP bundle (the installer never installs desktop apps)"
+  elif [ -e "$CYBERDECK_HOME/cyberdeck.mcpb" ]; then
+    run rm -f "$CYBERDECK_HOME/cyberdeck.mcpb"
+    note "ACTION REQUIRED: remove the Cyberdeck extension in Claude Desktop under Settings > Extensions; Claude Code in the app uses the cyberdeck registration (this script never edits Claude Desktop's app state)"
   fi
 else
   note "macOS desktop integrations skipped on $PLATFORM; no desktop app detection or installation was attempted"
