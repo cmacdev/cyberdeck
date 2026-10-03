@@ -91,7 +91,8 @@ approval_mode = "prompt"
 
 Claude Desktop does not read Claude Code's registration; it needs the `.mcpb` bundle the installer
 builds (`open ~/.cyberdeck/cyberdeck.mcpb`, or Settings > Extensions > Advanced settings >
-Install Extension).
+Install Extension). On macOS, also add `"mcp__Cyberdeck"` to `permissions.deny` in
+`~/.claude/settings.json`.
 
 ## Update
 
@@ -116,7 +117,7 @@ using the checkout path when applicable. A server bound to that file picks up th
 
 ## Uninstall
 
-`install.sh --uninstall` removes the Claude Code registration and both permission rules, the
+`install.sh --uninstall` removes the Claude Code registration and its permission rules, the
 `[mcp_servers.cyberdeck]` block, both managed `deck` skills, the managed Pi coordinator,
 and `~/.cyberdeck` (only when it is a Cyberdeck home); everything else in those files is preserved. On a Mac it reminds you to remove
 the extension in Claude Desktop. Pi, its auth store, and provider settings stay. Revoke unused
