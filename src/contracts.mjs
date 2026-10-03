@@ -1,6 +1,6 @@
 import { THINKING_LEVELS } from "./config.mjs";
 
-export const SERVER_INFO = Object.freeze({ name: "cyberdeck", version: "0.1.0" });
+export const SERVER_INFO = Object.freeze({ name: "cyberdeck", version: "0.1.1" });
 export const MODERN_PROTOCOL_VERSION = "2026-07-28";
 export const LEGACY_PROTOCOL_VERSIONS = Object.freeze([
   "2025-11-25",
