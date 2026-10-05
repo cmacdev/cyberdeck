@@ -56,17 +56,17 @@ MCP runs are stateless (`--no-session`). Herdr workers are persistent Pi session
 
 The task, constraints, attached `context_files`, and whatever enabled Pi tools read go to the selected provider. Cyberdeck makes no network calls. Each MCP run sets `PI_SKIP_VERSION_CHECK=1` and `PI_TELEMETRY=0`. Pi's own tools still reach the network when the task does, including `bash` under `implement`.
 
-The installer contacts github.com (clone), the npm registry (Pi, only when `pi` is absent), and Venice's API when configuring Venice: authentication, model metadata, and a one-token privacy probe containing only `1`. An unrestricted key may incur a minimal charge. Inference keys live in Pi's auth store. Provider ZDR does not cover local artifacts or external tools.
+The installer contacts github.com (clone), the npm registry (Pi, on every install), and Venice's API when configuring Venice: authentication, model metadata, and a one-token privacy probe containing only `1`. An unrestricted key may incur a minimal charge. Inference keys live in Pi's auth store. Provider ZDR does not cover local artifacts or external tools.
 
 Enforced and unenforced boundaries: [SECURITY.md](SECURITY.md). Read it before unattended `implement`.
 
 ## Requirements
 
-macOS or Linux, Node.js 20 or newer, git for a piped install, and a provider API key. No Windows support; open an issue if you want it. Pi 0.84.2 is installed with `npm install -g` only when `pi` is absent (`--pin-pi` forces that version). An existing Pi is never touched. Everything else is zero-dependency Node.
+macOS or Linux, Node.js 20 or newer, git for a piped install, and a provider API key. No Windows support; open an issue if you want it. Every install runs `npm install -g` for the latest Pi, including when `pi` is already present. There is no pin. npm must be installed and its global directory writable, including for `--dry-run`. `--uninstall` leaves Pi. Everything else is zero-dependency Node.
 
 ## Install
 
-Run the command at the top. From a checkout: `bash install.sh [--provider openrouter|venice] [--codex-only] [--herdr] [--dry-run] [--pin-pi] [--uninstall]`. Piped dry run: append `-s -- --dry-run` to the command at the top. It prints the plan and does not perform the writes below; the `pi` and `claude` probes may still create those tools' own state files. Re-running is the update. `--uninstall` removes Cyberdeck and leaves Pi, its credentials, and provider settings. The installer is idempotent and never uses sudo.
+Run the command at the top. From a checkout: `bash install.sh [--provider openrouter|venice] [--codex-only] [--herdr] [--dry-run] [--uninstall]`. Piped dry run: append `-s -- --dry-run` to the command at the top. It prints the plan and does not perform the writes below; the `pi` and `claude` probes may still create those tools' own state files. Re-running is the update. `--uninstall` removes Cyberdeck and leaves Pi, its credentials, and provider settings. The installer is idempotent and never uses sudo.
 
 Interactive installs ask for a provider, defaulting to the installed choice or OpenRouter. `--provider` skips the prompt. `--codex-only` installs and uninstalls without invoking Claude's CLI.
 
@@ -86,7 +86,7 @@ The installer writes exactly these locations:
 | `~/.pi/agent/auth.json` | Selected provider's inference key; unrelated credentials preserved |
 | `~/.pi/agent/models.json` | OpenRouter ZDR routing on every install; Venice's endpoint and configured model metadata when selected; other providers preserved |
 | `~/.pi/agent/extensions/cyberdeck-coordinator`, `~/.pi/agent/extensions/herdr-agent-state.ts` | With `--herdr`: managed coordinator loader and Herdr's official Pi state extension |
-| npm's global directory (`npm prefix -g`) | Pi, only when `pi` was absent; `--uninstall` leaves it |
+| npm's global directory (`npm prefix -g`) | Latest Pi, installed or updated on every install; `--uninstall` leaves it |
 
 Stops, manual setup, update, and uninstall: [install-helper.md](install-helper.md). Install and uninstall do not change Pi's interactive settings; each run supplies its own model, thinking, and telemetry settings. Restart the client after a first install so it spawns the server. Clients bound to `~/.cyberdeck/cyberdeck.config.json` pick up a reinstall's replaced policy without a restart. Invoke `/deck …` (Claude Code), `$deck …` (Codex CLI), or `@deck …` (ChatGPT Desktop). The skill chooses `research` or `implement` and a role, and calls Cyberdeck with the absolute project directory.
 

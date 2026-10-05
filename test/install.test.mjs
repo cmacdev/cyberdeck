@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { execFile, spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import { chmod, mkdir, readFile, readdir, realpath, stat, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, readdir, realpath, stat, symlink, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { promisify } from "node:util";
@@ -9,7 +10,7 @@ import { promisify } from "node:util";
 import { makeFixture, packageDirectory } from "./helpers.mjs";
 import { inferenceKey } from "../fixtures/venice-api.mjs";
 
-const execFileAsync = promisify(execFile);
+const realExecFile = promisify(execFile);
 const testSystemPath = [
   path.dirname(process.execPath),
   "/run/current-system/sw/bin",
@@ -17,14 +18,41 @@ const testSystemPath = [
   "/bin",
 ].join(":");
 
+async function withNpmStub(options = {}) {
+  const env = { ...(options.env ?? {}) };
+  const stub = await mkdtemp(path.join(tmpdir(), "cyberdeck-npm-"));
+  const prefix = path.join(stub, "prefix");
+  const prefixBin = path.join(prefix, "bin");
+  await mkdir(prefixBin, { recursive: true });
+  await mkdir(path.join(stub, "root"), { recursive: true });
+  const trace = env.CYBERDECK_NPM_TRACE || path.join(stub, "npm-calls");
+  await writeFile(
+    path.join(stub, "npm"),
+    `#!/bin/sh\nprintf '%s\\n' "$*" >> ${JSON.stringify(trace)}\ncase "$1" in\n  root) printf '%s\\n' ${JSON.stringify(path.join(stub, "root"))} ;;\n  prefix) printf '%s\\n' ${JSON.stringify(prefix)} ;;\nesac\nexit 0\n`,
+  );
+  await chmod(path.join(stub, "npm"), 0o755);
+  return { ...options, env: { ...env, PATH: `${stub}:${prefixBin}:${env.PATH ?? ""}` } };
+}
+
+function execFileAsync(command, args, options) {
+  return (async () => {
+    if (command === "bash" && args?.[0] === "install.sh") options = await withNpmStub(options);
+    return realExecFile(command, args, options);
+  })();
+}
+
 function runWithClosedInput(command, args, options) {
-  return new Promise((resolve) => {
-    const child = spawn(command, args, { ...options, stdio: ["ignore", "pipe", "pipe"] });
-    let stdout = "";
-    let stderr = "";
-    child.stdout.on("data", (chunk) => (stdout += chunk));
-    child.stderr.on("data", (chunk) => (stderr += chunk));
-    child.on("close", (code) => resolve({ code, stdout, stderr }));
+  return new Promise((resolve, reject) => {
+    const start = async () => {
+      if (command === "bash" && args?.[0] === "install.sh") options = await withNpmStub(options);
+      const child = spawn(command, args, { ...options, stdio: ["ignore", "pipe", "pipe"] });
+      let stdout = "";
+      let stderr = "";
+      child.stdout.on("data", (chunk) => (stdout += chunk));
+      child.stderr.on("data", (chunk) => (stderr += chunk));
+      child.on("close", (code) => resolve({ code, stdout, stderr }));
+    };
+    start().catch(reject);
   });
 }
 
@@ -511,16 +539,19 @@ test("a piped dry-run clones nothing, writes nothing, and completes", async (t) 
   await execFileAsync("git", ["clone", "--quiet", "--bare", packageDirectory, bare]);
   const home = path.join(fixture.root, "home");
   await mkdir(home);
+  const piped = await withNpmStub({
+    env: {
+      ...process.env,
+      HOME: home,
+      CYBERDECK_HOME: path.join(home, ".cyberdeck"),
+      CYBERDECK_REPO_URL: `file://${bare}`,
+      PATH: `${bin}:${testSystemPath}`,
+    },
+  });
   const { code, stdout, stderr } = await new Promise((resolve) => {
     const child = spawn("bash", ["-s", "--", "--dry-run"], {
       cwd: fixture.root,
-      env: {
-        ...process.env,
-        HOME: home,
-        CYBERDECK_HOME: path.join(home, ".cyberdeck"),
-        CYBERDECK_REPO_URL: `file://${bare}`,
-        PATH: `${bin}:${testSystemPath}`,
-      },
+      env: piped.env,
       stdio: ["pipe", "pipe", "pipe"],
     });
     let out = "";
@@ -566,16 +597,19 @@ test("a diverged or rewritten app clone is healed on re-run", async (t) => {
   await execFileAsync("git", ["-C", appDir, "commit", "--quiet", "-m", "unrelated"], { env: gitEnv });
   await execFileAsync("git", ["-C", appDir, "remote", "add", "origin", bare], { env: gitEnv });
 
+  const healed = await withNpmStub({
+    env: {
+      ...process.env,
+      HOME: home,
+      CYBERDECK_HOME: path.join(home, ".cyberdeck"),
+      CYBERDECK_REPO_URL: `file://${bare}`,
+      PATH: `${bin}:${testSystemPath}`,
+    },
+  });
   const { code, stdout, stderr } = await new Promise((resolve) => {
     const child = spawn("bash", ["-s", "--"], {
       cwd: fixture.root,
-      env: {
-        ...process.env,
-        HOME: home,
-        CYBERDECK_HOME: path.join(home, ".cyberdeck"),
-        CYBERDECK_REPO_URL: `file://${bare}`,
-        PATH: `${bin}:${testSystemPath}`,
-      },
+      env: healed.env,
       stdio: ["pipe", "pipe", "pipe"],
     });
     let out = "";
@@ -711,4 +745,63 @@ test("Herdr opt-in installs and updates only its managed coordinator and preserv
   await execFileAsync("bash", ["install.sh", "--codex-only", "--uninstall"], { cwd: packageDirectory, env: uninstallEnv });
   assert.equal(existsSync(target), false);
   assert.equal(await readFile(path.join(agent, "settings.json"), "utf8"), settings);
+});
+
+test("every install updates Pi to the npm latest tag, including an existing Pi", async (t) => {
+  const fixture = await makeFixture(t);
+  const bin = path.join(fixture.root, "bin");
+  await mkdir(bin);
+  await symlink(process.execPath, path.join(bin, "node"));
+  await writeFile(path.join(bin, "uname"), "#!/bin/sh\necho Linux\n");
+  await chmod(path.join(bin, "uname"), 0o755);
+  const trace = path.join(fixture.root, "npm-calls");
+  const env = {
+    ...process.env,
+    HOME: fixture.root,
+    CYBERDECK_HOME: path.join(fixture.root, ".cyberdeck"),
+    CYBERDECK_NPM_TRACE: trace,
+    PATH: `${bin}:/usr/bin:/bin`,
+  };
+  const missing = await execFileAsync("bash", ["install.sh", "--dry-run", "--codex-only", "--provider", "openrouter"], {
+    cwd: packageDirectory,
+    env,
+  });
+  assert.equal(missing.stderr, "");
+  assert.match(missing.stdout, /would run: npm install -g @earendil-works\/pi-coding-agent@latest/);
+  assert.match(missing.stdout, /would install the latest Pi/);
+  assert.doesNotMatch(missing.stdout, /pin-pi|0\.84\.2/);
+
+  await writeFile(path.join(bin, "pi"), "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo 'pi 0.84.2'; else echo ready; fi\n");
+  await chmod(path.join(bin, "pi"), 0o755);
+  const present = await execFileAsync("bash", ["install.sh", "--dry-run", "--codex-only", "--provider", "openrouter"], {
+    cwd: packageDirectory,
+    env,
+  });
+  assert.equal(present.stderr, "");
+  assert.match(present.stdout, /would set pi 0\.84\.2 to the latest release/);
+  assert.match(present.stdout, /would run: npm install -g @earendil-works\/pi-coding-agent@latest/);
+
+  await writeFile(path.join(bin, "pi"), "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo '1.1.0-rc.1'; else echo ready; fi\n");
+  const prerelease = await execFileAsync("bash", ["install.sh", "--dry-run", "--codex-only", "--provider", "openrouter"], {
+    cwd: packageDirectory,
+    env,
+  });
+  assert.match(prerelease.stdout, /would set pi 1\.1\.0-rc\.1 to the latest release/);
+
+  await writeFile(path.join(bin, "pi"), "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo 'pi 0.84.2'; else echo ready; fi\n");
+  const installed = await execFileAsync("bash", ["install.sh", "--codex-only", "--provider", "openrouter"], {
+    cwd: packageDirectory,
+    env,
+  });
+  assert.equal(installed.stderr, "");
+  assert.match(installed.stdout, /pi 0\.84\.2 is current/);
+  assert.match(await readFile(trace, "utf8"), /install -g @earendil-works\/pi-coding-agent@latest/);
+
+  await writeFile(path.join(bin, "pi"), "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo nope; else echo ready; fi\n");
+  const unreadable = await execFileAsync("bash", ["install.sh", "--codex-only", "--provider", "openrouter"], {
+    cwd: packageDirectory,
+    env,
+  });
+  assert.match(unreadable.stdout, /version could not be read/);
+  assert.doesNotMatch(unreadable.stdout, /unknown/);
 });

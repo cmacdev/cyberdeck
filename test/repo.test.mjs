@@ -85,9 +85,22 @@ test("the README role table mirrors the shipped configuration", async () => {
   assert.equal(rows.length, expectedRows);
 });
 
-test("the README names the pinned Pi version", async () => {
-  const [, pinned] = (await read("install.sh")).match(/^PINNED_PI="([^"]+)"/m);
-  assert.ok((await read("README.md")).includes(`Pi ${pinned} `), `README does not mention Pi ${pinned}`);
+test("the installer installs the latest Pi and does not pin a version", async () => {
+  const installer = await read("install.sh");
+  const readme = await read("README.md");
+  const helper = await read("install-helper.md");
+  assert.equal(installer.includes("PINNED_PI"), false);
+  assert.equal(installer.includes("--pin-pi"), false);
+  assert.match(installer, /npm install -g "\$PI_PACKAGE@latest"/);
+  assert.match(installer, /would set pi/);
+  assert.match(installer, /set pi from/);
+  assert.equal(installer.includes("updated pi from"), false);
+  assert.match(readme, /latest Pi/);
+  assert.equal(readme.includes("only when `pi` is absent"), false);
+  assert.equal(helper.includes("does not upgrade"), false);
+  assert.equal(readme.includes("--pin-pi"), false);
+  assert.equal(helper.includes("--pin-pi"), false);
+  assert.equal(helper.includes("tested version"), false);
 });
 
 test("the deck skill names exactly the shipped roles", async () => {
