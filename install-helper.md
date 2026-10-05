@@ -12,7 +12,7 @@ Every stop prints its cause; apply the fix and re-run the same command.
 | Message | Fix |
 | --- | --- |
 | `Node.js >= 20 is required` | Install or upgrade Node (e.g. `brew install node`) so `node` on `PATH` is 20 or newer. |
-| `npm is required to install Pi` | Install Node.js with npm included, then re-run. |
+| `npm is required to install or update Pi` | Install Node.js with npm included, then re-run. |
 | `npm's global directory … is not writable by <user>` | `npm config set prefix ~/.npm-global && export PATH="$HOME/.npm-global/bin:$PATH"`, and put the `PATH` line in your shell profile. Do not sudo. |
 | `ACTION REQUIRED: add <dir> to PATH` (not a stop) | Pi went into npm's global `bin`, which is not on your normal `PATH`; MCP clients use the recorded absolute path, but add the directory to your shell profile for terminal use. |
 | `git is required` | Install git (`xcode-select --install` or `brew install git`). |
@@ -40,7 +40,9 @@ Every stop prints its cause; apply the fix and re-run the same command.
 | `'<command>' failed` | That command printed its error just above; fix it and re-run. |
 | `cannot update the app at <dir>` | The existing checkout stays in place. Fix the reported git or network error and re-run. |
 | `verification failed: the resolved configuration does not load` | `node ~/.cyberdeck/app/bin/cyberdeck-mcp.mjs --config ~/.cyberdeck/cyberdeck.config.json --inspect` prints the error; fix `~/.cyberdeck/cyberdeck.config.json` and re-run. |
-| `pi <found> found; left untouched (tested with <pinned>…)` (not a stop) | A different Pi version stays. `--pin-pi` installs the tested version, up or down. |
+| `updated pi from <old> to <new>` (not a stop) | The installer moved Pi to the latest npm release. Open a new shell if `pi --version` still shows the old one. |
+| `pi <found> is current` (not a stop) | npm already has the latest Pi. Re-running still checks. |
+| `ACTION REQUIRED: put <dir> first on PATH` (not a stop) | Another Pi is earlier on PATH. Put npm's global bin first so the shell `pi` matches the updated binary. |
 | `ACTION REQUIRED: remove the Cyberdeck extension in Claude Desktop` (not a stop) | Cyberdeck no longer installs a Claude Desktop extension; Claude Code in the app uses the `cyberdeck` registration. Remove the extension under Settings > Extensions. |
 | OpenRouter says no endpoints match your data policy (not a stop) | Pick a model with a ZDR endpoint; keep `zdr` and `data_collection` enforced. |
 
@@ -95,8 +97,9 @@ schema path. Roles, model aliases, limits, workspace roots, and Pi arguments are
 Unrelated Pi settings are. The selected provider's privacy controls are reapplied before that
 replacement; a failed Venice check leaves the previous policy in place. Venice reuses its saved
 inference key, checks privacy enforcement against the published policy, and refreshes model
-metadata. Pi is never updated implicitly: when the found version differs from the tested
-one the installer says so and keeps it; add `--pin-pi` to move Pi to the tested version.
+metadata. Every install runs `npm install -g @earendil-works/pi-coding-agent@latest`, including
+when Pi is already present. An older Pi is updated. Pi's auth store and other settings are not.
+`--uninstall` still leaves Pi.
 Delegated runs suppress Pi's update notices by design; interactive `pi` shows them itself.
 Servers bound to the installed policy pick up the replacement without a restart.
 

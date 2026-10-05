@@ -2,7 +2,6 @@
 set -Eeuo pipefail
 
 main() {
-PINNED_PI="0.84.2"
 PI_PACKAGE="@earendil-works/pi-coding-agent"
 CYBERDECK_HOME="${CYBERDECK_HOME:-$HOME/.cyberdeck}"
 if [ -d "$CYBERDECK_HOME" ]; then CYBERDECK_HOME="$(cd "$CYBERDECK_HOME" && pwd -P)"; fi
@@ -10,12 +9,12 @@ CYBERDECK_REPO_URL="${CYBERDECK_REPO_URL:-https://github.com/cmacdev/cyberdeck.g
 
 usage() {
   cat <<EOF
-Usage: bash install.sh [--provider openrouter|venice] [--codex-only] [--herdr] [--dry-run] [--pin-pi] [--uninstall]
+Usage: bash install.sh [--provider openrouter|venice] [--codex-only] [--herdr] [--dry-run] [--uninstall]
 
 Idempotent and sudo-free. Registers Cyberdeck with Claude Code and Codex (plus ChatGPT
-Desktop on macOS), installs Pi $PINNED_PI only when pi is absent
-(--pin-pi forces that version), and stores the selected provider key in Pi's auth store only
-when Pi has none. Venice requires an inference key restricted to private models.
+Desktop on macOS), installs or updates Pi to the latest release, and stores the selected
+provider key in Pi's auth store only when Pi has none. Venice requires an inference key
+restricted to private models.
 Piped runs clone CYBERDECK_REPO_URL into CYBERDECK_HOME/app.
 --codex-only skips Claude installation and never invokes its CLI.
 --herdr installs the Pi coordinator extension; requires an existing Herdr installation.
@@ -24,7 +23,6 @@ EOF
 }
 
 DRY_RUN=0
-PIN_PI=0
 UNINSTALL=0
 PROVIDER=""
 CODEX_ONLY=0
@@ -43,7 +41,6 @@ while [ "$#" -gt 0 ]; do
     --dry-run) DRY_RUN=1 ;;
     --codex-only) CODEX_ONLY=1 ;;
     --herdr) HERDR=1 ;;
-    --pin-pi) PIN_PI=1 ;;
     --uninstall) UNINSTALL=1 ;;
     --help | -h)
       usage
@@ -319,41 +316,49 @@ npm_global_writable() {
   done
 }
 install_pi() {
-  command -v npm >/dev/null 2>&1 || die "npm is required to install Pi; it ships with Node. Install Node.js with npm included, then re-run."
+  command -v npm >/dev/null 2>&1 || die "npm is required to install or update Pi; it ships with Node. Install Node.js with npm included, then re-run."
   npm_global_writable || die "npm's global directory ($(npm prefix -g)) is not writable by $(id -un), and this installer never uses sudo (typical when Node was installed from another user account). Give npm a user-level prefix, then re-run:
   npm config set prefix ~/.npm-global && export PATH=\"\$HOME/.npm-global/bin:\$PATH\"
 Put that PATH line in your shell profile too, so future shells can find pi."
-  run npm install -g "$PI_PACKAGE@$PINNED_PI"
+  run npm install -g "$PI_PACKAGE@latest"
   NPM_BIN="$(npm prefix -g)/bin"
   case ":$PATH:" in
     *":$NPM_BIN:"*) ;;
-    *)
-      export PATH="$NPM_BIN:$PATH"
-      note "ACTION REQUIRED: add $NPM_BIN to PATH in your shell profile so future shells can find pi"
-      ;;
+    *) note "ACTION REQUIRED: add $NPM_BIN to PATH in your shell profile so future shells can find pi" ;;
   esac
-}
-if command -v pi >/dev/null 2>&1; then
-  FOUND_PI="$(pi --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true)"
-  FOUND_PI="${FOUND_PI:-unknown}"
-  if [ "$FOUND_PI" = "$PINNED_PI" ]; then
-    note "pi $FOUND_PI found (tested version); left untouched"
-  elif [ "$PIN_PI" -eq 1 ]; then
-    install_pi
-    if [ "$DRY_RUN" -eq 1 ]; then
-      note "pi would be set to $PINNED_PI (explicit --pin-pi)"
-    else
-      note "pi set to $PINNED_PI (explicit --pin-pi)"
+  if [ "$DRY_RUN" -ne 1 ]; then
+    export PATH="$NPM_BIN:$PATH"
+    if [ -n "${PREVIOUS_PI:-}" ] && [ -x "$NPM_BIN/pi" ] && [ "$PREVIOUS_PI" != "$NPM_BIN/pi" ]; then
+      note "ACTION REQUIRED: put $NPM_BIN first on PATH so the shell uses the updated Pi at $NPM_BIN/pi"
     fi
+  fi
+}
+pi_version() {
+  local version
+  version="$(pi --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true)"
+  printf '%s\n' "${version:-unknown}"
+}
+PREVIOUS_PI=""
+PREVIOUS_VERSION=""
+if command -v pi >/dev/null 2>&1; then
+  PREVIOUS_PI="$(command -v pi)"
+  PREVIOUS_VERSION="$(pi_version)"
+fi
+install_pi
+if [ "$DRY_RUN" -eq 1 ]; then
+  if [ -n "$PREVIOUS_VERSION" ]; then
+    note "would update pi $PREVIOUS_VERSION to the latest release"
   else
-    note "pi $FOUND_PI found; left untouched (tested with $PINNED_PI; pass --pin-pi to install that version)"
+    note "would install the latest Pi"
   fi
 else
-  install_pi
-  if [ "$DRY_RUN" -eq 1 ]; then
-    note "would install pi $PINNED_PI"
+  INSTALLED_PI="$(pi_version)"
+  if [ -z "$PREVIOUS_VERSION" ]; then
+    note "installed pi $INSTALLED_PI"
+  elif [ "$PREVIOUS_VERSION" = "$INSTALLED_PI" ]; then
+    note "pi $INSTALLED_PI is current"
   else
-    note "installed pi $PINNED_PI"
+    note "updated pi from $PREVIOUS_VERSION to $INSTALLED_PI"
   fi
 fi
 
