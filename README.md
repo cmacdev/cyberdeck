@@ -62,7 +62,7 @@ Enforced and unenforced boundaries: [SECURITY.md](SECURITY.md). Read it before u
 
 ## Requirements
 
-macOS or Linux, Node.js 20 or newer, git for a piped install, and a provider API key. No Windows support; open an issue if you want it. Every install runs `npm install -g` for the latest Pi, including when `pi` is already present. `--uninstall` leaves Pi. Everything else is zero-dependency Node.
+macOS or Linux, Node.js 20 or newer, git for a piped install, and a provider API key. No Windows support; open an issue if you want it. Every install runs `npm install -g` for the latest Pi, including when `pi` is already present. There is no pin. npm must be installed and its global directory writable, including for `--dry-run`. `--uninstall` leaves Pi. Everything else is zero-dependency Node.
 
 ## Install
 

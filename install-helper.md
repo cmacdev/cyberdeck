@@ -40,7 +40,8 @@ Every stop prints its cause; apply the fix and re-run the same command.
 | `'<command>' failed` | That command printed its error just above; fix it and re-run. |
 | `cannot update the app at <dir>` | The existing checkout stays in place. Fix the reported git or network error and re-run. |
 | `verification failed: the resolved configuration does not load` | `node ~/.cyberdeck/app/bin/cyberdeck-mcp.mjs --config ~/.cyberdeck/cyberdeck.config.json --inspect` prints the error; fix `~/.cyberdeck/cyberdeck.config.json` and re-run. |
-| `updated pi from <old> to <new>` (not a stop) | The installer moved Pi to the latest npm release. Open a new shell if `pi --version` still shows the old one. |
+| `set pi from <old> to <new>` (not a stop) | Pi moved to the latest npm release, up or down. Open a new shell if `pi --version` still shows the old one. |
+| `version could not be read` (not a stop) | `pi --version` did not print a version. Fix that command, then re-run. |
 | `pi <found> is current` (not a stop) | npm already has the latest Pi. Re-running still checks. |
 | `ACTION REQUIRED: put <dir> first on PATH` (not a stop) | Another Pi is earlier on PATH. Put npm's global bin first so the shell `pi` matches the updated binary. |
 | `ACTION REQUIRED: remove the Cyberdeck extension in Claude Desktop` (not a stop) | Cyberdeck no longer installs a Claude Desktop extension; Claude Code in the app uses the `cyberdeck` registration. Remove the extension under Settings > Extensions. |
@@ -98,8 +99,9 @@ Unrelated Pi settings are. The selected provider's privacy controls are reapplie
 replacement; a failed Venice check leaves the previous policy in place. Venice reuses its saved
 inference key, checks privacy enforcement against the published policy, and refreshes model
 metadata. Every install runs `npm install -g @earendil-works/pi-coding-agent@latest`, including
-when Pi is already present. An older Pi is updated. Pi's auth store and other settings are not.
-`--uninstall` still leaves Pi.
+when Pi is already present. `--dry-run` does not install, but still requires npm and a writable
+global directory. There is no pin and no flag to keep an older Pi. A prerelease can move back to
+the latest stable tag. Pi's auth store and other settings are not. `--uninstall` still leaves Pi.
 Delegated runs suppress Pi's update notices by design; interactive `pi` shows them itself.
 Servers bound to the installed policy pick up the replacement without a restart.
 

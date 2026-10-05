@@ -328,14 +328,18 @@ Put that PATH line in your shell profile too, so future shells can find pi."
   esac
   if [ "$DRY_RUN" -ne 1 ]; then
     export PATH="$NPM_BIN:$PATH"
-    if [ -n "${PREVIOUS_PI:-}" ] && [ -x "$NPM_BIN/pi" ] && [ "$PREVIOUS_PI" != "$NPM_BIN/pi" ]; then
+  fi
+  if [ -n "${PREVIOUS_PI:-}" ] && [ -x "$NPM_BIN/pi" ] && [ "$PREVIOUS_PI" != "$NPM_BIN/pi" ]; then
+    if [ "$DRY_RUN" -eq 1 ]; then
+      note "would put $NPM_BIN first on PATH so the shell uses $NPM_BIN/pi instead of $PREVIOUS_PI"
+    else
       note "ACTION REQUIRED: put $NPM_BIN first on PATH so the shell uses the updated Pi at $NPM_BIN/pi"
     fi
   fi
 }
 pi_version() {
   local version
-  version="$(pi --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true)"
+  version="$(pi --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?' | head -1 || true)"
   printf '%s\n' "${version:-unknown}"
 }
 PREVIOUS_PI=""
@@ -346,19 +350,25 @@ if command -v pi >/dev/null 2>&1; then
 fi
 install_pi
 if [ "$DRY_RUN" -eq 1 ]; then
-  if [ -n "$PREVIOUS_VERSION" ]; then
-    note "would update pi $PREVIOUS_VERSION to the latest release"
-  else
+  if [ -z "$PREVIOUS_VERSION" ]; then
     note "would install the latest Pi"
+  elif [ "$PREVIOUS_VERSION" = "unknown" ]; then
+    note "would set the installed Pi to the latest release"
+  else
+    note "would set pi $PREVIOUS_VERSION to the latest release"
   fi
 else
   INSTALLED_PI="$(pi_version)"
-  if [ -z "$PREVIOUS_VERSION" ]; then
+  if [ "$INSTALLED_PI" = "unknown" ]; then
+    note "Pi is installed, but its version could not be read. Check 'pi --version', then re-run."
+  elif [ -z "$PREVIOUS_VERSION" ]; then
     note "installed pi $INSTALLED_PI"
   elif [ "$PREVIOUS_VERSION" = "$INSTALLED_PI" ]; then
     note "pi $INSTALLED_PI is current"
+  elif [ "$PREVIOUS_VERSION" = "unknown" ]; then
+    note "set pi to $INSTALLED_PI"
   else
-    note "updated pi from $PREVIOUS_VERSION to $INSTALLED_PI"
+    note "set pi from $PREVIOUS_VERSION to $INSTALLED_PI"
   fi
 fi
 

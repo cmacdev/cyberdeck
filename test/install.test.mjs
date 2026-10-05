@@ -778,9 +778,17 @@ test("every install updates Pi to the npm latest tag, including an existing Pi",
     env,
   });
   assert.equal(present.stderr, "");
-  assert.match(present.stdout, /would update pi 0\.84\.2 to the latest release/);
+  assert.match(present.stdout, /would set pi 0\.84\.2 to the latest release/);
   assert.match(present.stdout, /would run: npm install -g @earendil-works\/pi-coding-agent@latest/);
 
+  await writeFile(path.join(bin, "pi"), "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo '1.1.0-rc.1'; else echo ready; fi\n");
+  const prerelease = await execFileAsync("bash", ["install.sh", "--dry-run", "--codex-only", "--provider", "openrouter"], {
+    cwd: packageDirectory,
+    env,
+  });
+  assert.match(prerelease.stdout, /would set pi 1\.1\.0-rc\.1 to the latest release/);
+
+  await writeFile(path.join(bin, "pi"), "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo 'pi 0.84.2'; else echo ready; fi\n");
   const installed = await execFileAsync("bash", ["install.sh", "--codex-only", "--provider", "openrouter"], {
     cwd: packageDirectory,
     env,
@@ -788,4 +796,12 @@ test("every install updates Pi to the npm latest tag, including an existing Pi",
   assert.equal(installed.stderr, "");
   assert.match(installed.stdout, /pi 0\.84\.2 is current/);
   assert.match(await readFile(trace, "utf8"), /install -g @earendil-works\/pi-coding-agent@latest/);
+
+  await writeFile(path.join(bin, "pi"), "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo nope; else echo ready; fi\n");
+  const unreadable = await execFileAsync("bash", ["install.sh", "--codex-only", "--provider", "openrouter"], {
+    cwd: packageDirectory,
+    env,
+  });
+  assert.match(unreadable.stdout, /version could not be read/);
+  assert.doesNotMatch(unreadable.stdout, /unknown/);
 });
