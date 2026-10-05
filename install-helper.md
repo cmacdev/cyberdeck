@@ -36,23 +36,19 @@ Every stop prints its cause; apply the fix and re-run the same command.
 | `Herdr is required for --herdr` | Install Herdr from herdr.dev, then re-run with `--herdr`. |
 | `cannot install the coordinator at <path> because it is not managed by Cyberdeck` | Move that extension directory aside, then re-run with `--herdr`. |
 | `cannot install the deck skill at <path> because that path already exists` | A non-Cyberdeck skill owns the name `deck`. Move or remove it; the installer never overwrites it. |
-| `zip is required to build the Claude Desktop MCP bundle on macOS` | `xcode-select --install`, then re-run. Never checked on Linux. |
 | `unexpected failure at install.sh line <n>` | The named command failed; fix the error printed above it and re-run. |
 | `'<command>' failed` | That command printed its error just above; fix it and re-run. |
 | `cannot update the app at <dir>` | The existing checkout stays in place. Fix the reported git or network error and re-run. |
 | `verification failed: the resolved configuration does not load` | `node ~/.cyberdeck/app/bin/cyberdeck-mcp.mjs --config ~/.cyberdeck/cyberdeck.config.json --inspect` prints the error; fix `~/.cyberdeck/cyberdeck.config.json` and re-run. |
 | `pi <found> found; left untouched (tested with <pinned>…)` (not a stop) | A different Pi version stays. `--pin-pi` installs the tested version, up or down. |
-| Claude Desktop says `ENOENT … package.mcpb` (not a stop) | The bundle was moved before approval. `open ~/.cyberdeck/cyberdeck.mcpb` and approve again. |
+| `ACTION REQUIRED: remove the Cyberdeck extension in Claude Desktop` (not a stop) | Cyberdeck no longer installs a Claude Desktop extension; Claude Code in the app uses the `cyberdeck` registration. Remove the extension under Settings > Extensions. |
 | OpenRouter says no endpoints match your data policy (not a stop) | Pick a model with a ZDR endpoint; keep `zdr` and `data_collection` enforced. |
-| Claude Desktop reports a request timeout on a long run (not a stop) | The app caps local MCP calls at 60 seconds; the server cannot extend it. Raise Settings > Connectors > MCP tool call timeout (60-3600 seconds, app-wide), or run long delegations from Claude Code or Codex. |
 
 ## After a successful run
 
 Restart the client after a first install so it spawns the server. Clients bound to
-`~/.cyberdeck/cyberdeck.config.json` pick up a reinstall without a restart. Claude Desktop uses a
-derived config written at launch, so restart that app after a reinstall. `claude mcp get cyberdeck` (Claude Code) or `~/.codex/config.toml` (Codex
-CLI, ChatGPT Desktop) shows the registration; Claude Desktop lists the extension under Settings >
-Extensions and its configured workspace must still exist.
+`~/.cyberdeck/cyberdeck.config.json` pick up a reinstall without a restart. `claude mcp get cyberdeck` (Claude Code) or `~/.codex/config.toml` (Codex
+CLI, ChatGPT Desktop) shows the registration.
 `node ~/.cyberdeck/app/bin/cyberdeck-mcp.mjs --config ~/.cyberdeck/cyberdeck.config.json --inspect`
 prints the resolved contract (checkout installs: use the checkout path from the installer summary). To check the real Pi path once, call `research` with role
 `mechanical`, `thinking: "off"`, and task `Reply with exactly the word READY and nothing else.`,
@@ -89,11 +85,6 @@ approval_mode = "auto"
 approval_mode = "prompt"
 ```
 
-Claude Desktop does not read Claude Code's registration; it needs the `.mcpb` bundle the installer
-builds (`open ~/.cyberdeck/cyberdeck.mcpb`, or Settings > Extensions > Advanced settings >
-Install Extension). On macOS, also add `"mcp__Cyberdeck"` to `permissions.deny` in
-`~/.claude/settings.json`.
-
 ## Update
 
 Re-run the same install command. It resets `~/.cyberdeck/app` to the published version
@@ -107,12 +98,12 @@ inference key, checks privacy enforcement against the published policy, and refr
 metadata. Pi is never updated implicitly: when the found version differs from the tested
 one the installer says so and keeps it; add `--pin-pi` to move Pi to the tested version.
 Delegated runs suppress Pi's update notices by design; interactive `pi` shows them itself.
-Servers bound to the installed policy pick up the replacement without a restart. Restart Claude Desktop; its launcher writes a derived config only at start.
+Servers bound to the installed policy pick up the replacement without a restart.
 
 Edit the installed policy only for changes you are willing to reapply after the next install.
 A model change must update both its role binding and the profile's `modelPatterns`. Validate with
 `node ~/.cyberdeck/app/bin/cyberdeck-mcp.mjs --config ~/.cyberdeck/cyberdeck.config.json --inspect`,
-using the checkout path when applicable. A server bound to that file picks up the change; Claude Desktop still needs a restart. Read
+using the checkout path when applicable. A server bound to that file picks up the change. Read
 `cyberdeck://catalog` and `cyberdeck://profiles` to confirm.
 
 ## Uninstall

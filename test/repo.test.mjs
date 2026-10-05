@@ -85,12 +85,6 @@ test("the README role table mirrors the shipped configuration", async () => {
   assert.equal(rows.length, expectedRows);
 });
 
-test("the Claude Desktop deny rule tracks the extension display name", async () => {
-  const manifest = JSON.parse(await read("desktop/claude-manifest.json"));
-  const installer = await read("install.sh");
-  assert.ok(installer.includes(`mcp__${manifest.display_name}`));
-});
-
 test("the README names the pinned Pi version", async () => {
   const [, pinned] = (await read("install.sh")).match(/^PINNED_PI="([^"]+)"/m);
   assert.ok((await read("README.md")).includes(`Pi ${pinned} `), `README does not mention Pi ${pinned}`);
@@ -108,7 +102,7 @@ test("the deck skill names exactly the shipped roles", async () => {
 
 test("code carries no comments", async () => {
   const files = ["install.sh"];
-  for (const directory of ["bin", "desktop", "fixtures", "pi", "src", "test"]) {
+  for (const directory of ["bin", "fixtures", "pi", "src", "test"]) {
     for (const name of await readdir(path.join(packageDirectory, directory), { recursive: true })) {
       if (/\.[cm]?js$/.test(name)) files.push(path.join(directory, name));
     }
