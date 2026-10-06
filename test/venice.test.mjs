@@ -2,8 +2,9 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
+import { configureOpenRouter } from "../bin/configure-openrouter.mjs";
 import { configureVenice } from "../bin/configure-venice.mjs";
-import { inferenceKey, veniceFixture } from "../fixtures/venice-api.mjs";
+import { inferenceKey, veniceFixture, veniceModelIds } from "../fixtures/venice-api.mjs";
 
 const config = JSON.parse(await readFile(new URL("../cyberdeck.config.json", import.meta.url), "utf8"));
 const setup = (fixture, overrides = {}) => configureVenice({
@@ -21,10 +22,8 @@ test("Venice accepts an inference key and proves anonymous requests are rejected
   const provider = result.models.providers.venice;
   assert.equal(provider.api, "openai-completions");
   assert.equal(provider.baseUrl, "https://api.venice.ai/api/v1");
-  assert.deepEqual(provider.models.map((model) => model.id), ["deepseek-v4-flash-0731", "kimi-k3", "grok-4-7"]);
-  assert.equal(provider.models[0].thinkingLevelMap.off, "none");
-  assert.equal(provider.models[0].thinkingLevelMap.medium, null);
-  assert.equal(provider.models[0].thinkingLevelMap.max, "max");
+  assert.deepEqual(provider.models.map((model) => model.id), veniceModelIds);
+  assert.deepEqual(provider.models[0].thinkingLevelMap, { off: null, minimal: null, low: "low", medium: null, high: "high", xhigh: null, max: "max" });
   assert.equal(provider.models[0].samplingParams.venice_parameters.enable_web_search, "off");
 });
 
@@ -43,7 +42,7 @@ test("Venice refuses unrestricted keys without weakening ZDR or sending task dat
   assert.equal(fixture.calls.at(-1).body.max_tokens, 1);
 });
 
-test("Venice fails closed on anonymous or unverified role models before probing", async () => {
+test("Venice fails closed on anonymous or unverified catalog models before probing", async () => {
   for (const modelPrivacy of ["anonymized", "missing", "unknown"]) {
     const fixture = veniceFixture({ modelPrivacy });
     await assert.rejects(setup(fixture), /not private/);
@@ -76,5 +75,32 @@ test("Venice rejects alternate credentials that could bypass the restricted key"
 
 test("Venice also accepts the documented privacy error code", async () => {
   const result = await setup(veniceFixture({ errorFormat: "code" }));
-  assert.equal(result.models.providers.venice.models.length, 3);
+  assert.equal(result.models.providers.venice.models.length, veniceModelIds.length);
+});
+
+test("Venice refuses a catalog thinking level the live model does not accept", async () => {
+  const strict = structuredClone(config);
+  strict.models["grok-4-7"].providers.venice.thinking.push("max");
+  const fixture = veniceFixture();
+  await assert.rejects(
+    configureVenice({ existingKey: inferenceKey, config: strict, auth: {}, models: {}, fetch: fixture.fetch }),
+    /Venice model grok-4-7 does not accept thinking max\. Remove it from models\.grok-4-7\.providers\.venice\.thinking/,
+  );
+  assert.equal(fixture.calls.length, 2);
+});
+
+test("OpenRouter pins every catalog model to exactly its listed thinking levels under ZDR", () => {
+  const models = configureOpenRouter({
+    config,
+    models: { providers: { openrouter: { compat: { openRouterRouting: { order: ["keep"] } } } } },
+  });
+  const provider = models.providers.openrouter;
+  assert.deepEqual(provider.compat.openRouterRouting, { order: ["keep"] });
+  for (const model of Object.values(config.models)) {
+    const override = provider.modelOverrides[model.providers.openrouter.id];
+    const supported = Object.entries(override.thinkingLevelMap).filter(([, value]) => value !== null).map(([level]) => level);
+    assert.deepEqual(supported, model.providers.openrouter.thinking);
+    assert.deepEqual(override.compat.openRouterRouting, { zdr: true, data_collection: "deny" });
+  }
+  assert.deepEqual(configureOpenRouter({ config, models: structuredClone(models) }), models);
 });

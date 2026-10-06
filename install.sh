@@ -444,6 +444,14 @@ if [ ! -f "$APP_DIR/cyberdeck.config.json" ] && [ "$DRY_RUN" -ne 1 ]; then
   die "cyberdeck.config.json is missing from $APP_DIR. Restore the checkout (the piped installer clones a complete one), then re-run."
 fi
 
+if [ "$DRY_RUN" -eq 1 ]; then
+  note "Pi: would pin catalog thinking levels for OpenRouter models in $PI_MODELS"
+else
+  PI_AGENT_DIR="$PI_AGENT_DIR" node "$APP_DIR/bin/configure-openrouter.mjs" \
+    || die "OpenRouter setup failed. Make $PI_MODELS valid JSON and writable, then re-run."
+  note "Pi: pinned catalog thinking levels for OpenRouter models in $PI_MODELS"
+fi
+
 if command -v pi >/dev/null 2>&1; then
   PI_COMMAND="$(command -v pi)"
 elif [ "$DRY_RUN" -eq 1 ]; then

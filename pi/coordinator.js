@@ -20,9 +20,7 @@ export function coordinator(pi, { configPath = process.env.CYBERDECK_CONFIG || p
       const config = await loadConfig(configPath);
       const session = workerSession(environment.HERDR_SESSION || "default", ctx.sessionManager.getSessionId());
       manager = createWorkers({ config, session, cwd: ctx.cwd, environment });
-      catalog = Object.fromEntries(Object.entries(publicCatalog(config)).map(([name, profile]) => [name, {
-        permission: profile.permission, defaultRole: profile.defaultRole, tools: profile.tools, roles: profile.roles,
-      }]));
+      catalog = publicCatalog(config);
       ctx.ui.setStatus("cyberdeck", `deck · ${session}`);
     } catch (error) {
       failure = error.message;
@@ -31,7 +29,7 @@ export function coordinator(pi, { configPath = process.env.CYBERDECK_CONFIG || p
   });
   pi.on("before_agent_start", (event, ctx) => {
     if (ctx.mode !== "tui") return;
-    return { systemPrompt: `${event.systemPrompt}\n\n${instructions}\n${manager ? `Worker session: ${manager.session}\nConfigured roles: ${JSON.stringify(catalog)}` : `Workers unavailable: ${failure}. Report the setup error; do not improvise another worker mechanism.`}` };
+    return { systemPrompt: `${event.systemPrompt}\n\n${instructions}\n${manager ? `Worker session: ${manager.session}\nConfigured catalog: ${JSON.stringify(catalog)}` : `Workers unavailable: ${failure}. Report the setup error; do not improvise another worker mechanism.`}` };
   });
   pi.on("tool_call", (event, ctx) => {
     if (ctx.mode === "tui" && guarded && event.toolName === "bash" && orchestrationGuard(event.input.command)) {
@@ -55,9 +53,10 @@ export function coordinator(pi, { configPath = process.env.CYBERDECK_CONFIG || p
         name: { type: "string", description: "Unique worker name; reused for follow-ups." },
         task: { type: "string" },
         profile: { type: "string", enum: ["research", "implementation"], description: "Start: research for read-only work; implementation for edits or shell work." },
-        role: { type: "string", description: "Start: choose a role from the configured catalog using its when description." },
-        model: { type: "string", description: "Optional override; omit to use the selected role's configured model." },
-        thinking: { type: "string", description: "Optional override; omit to use the selected role's configured thinking." },
+        kind: { type: "string", description: "Start: optional preset from the configured catalog; sets the default model, not the profile." },
+        model: { type: "string", description: "Start: catalog model chosen by tier and strengths; omit for the kind's or default model." },
+        thinking: { type: "string", description: "Start: one of the model's thinking levels; omit for its default." },
+        implemented_by: { type: "string", description: "Start: family that produced the work under review; a model of that family is rejected." },
         working_directory: { type: "string" }, timeout_seconds: { type: "integer", minimum: 1 },
       }, required: ["action"], additionalProperties: false,
     },

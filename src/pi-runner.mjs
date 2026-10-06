@@ -6,15 +6,10 @@ import path from "node:path";
 import { finished } from "node:stream/promises";
 import { StringDecoder } from "node:string_decoder";
 
-import {
-  THINKING_LEVELS,
-  isWithinRoot,
-  matchesModelPattern,
-} from "./config.mjs";
+import { isWithinRoot } from "./config.mjs";
 import {
   MAX_CONSTRAINTS,
   MAX_CONSTRAINT_CHARACTERS,
-  MAX_MODEL_CHARACTERS,
   MAX_PATH_CHARACTERS,
   emptyUsage,
 } from "./contracts.mjs";
@@ -22,9 +17,10 @@ import {
 const INPUT_KEYS = new Set([
   "task",
   "working_directory",
-  "role",
+  "kind",
   "model",
   "thinking",
+  "implemented_by",
   "context_files",
   "constraints",
   "timeout_seconds",
@@ -119,30 +115,37 @@ async function canonicalContextFiles(values, config) {
 
 export async function validateInput(profileName, rawInput, config) {
   const input = asObject(rawInput);
-  const profile = config.profiles[profileName];
   const task = requiredString(input.task, "task", config.limits.maxTaskCharacters);
-  const roleName = input.role === undefined ? profile.defaultRole : requiredString(input.role, "role", 32);
-  const role = profile.roles[roleName];
-  if (!role) {
-    inputFail(
-      `role ${JSON.stringify(roleName)} is not defined for ${profileName}; inspect cyberdeck://catalog.`,
-    );
+  const kindName = input.kind === undefined ? null : requiredString(input.kind, "kind", 32);
+  const kind = kindName !== null && Object.hasOwn(config.kinds, kindName) ? config.kinds[kindName] : null;
+  if (kindName !== null && !kind) {
+    inputFail(`kind ${JSON.stringify(kindName)} is not defined; inspect cyberdeck://catalog.`);
   }
-  const model =
+  const modelName =
     input.model === undefined
-      ? role.model
-      : requiredString(input.model, "model", MAX_MODEL_CHARACTERS).trim();
-  if (!matchesModelPattern(model, profile.modelPatterns)) {
+      ? (kind?.model ?? config.defaultModel)
+      : requiredString(input.model, "model", 32).trim();
+  const model = Object.hasOwn(config.models, modelName) ? config.models[modelName] : null;
+  if (!model) {
     inputFail(
-      `model ${JSON.stringify(model)} is not allowed by the ${profileName} profile; inspect cyberdeck://catalog.`,
+      `model ${JSON.stringify(modelName)} is not a model available on ${config.provider}; inspect cyberdeck://catalog.`,
     );
   }
-  const thinking = input.thinking ?? role.defaultThinking;
-  if (!THINKING_LEVELS.includes(thinking)) {
-    inputFail(`thinking must be one of: ${THINKING_LEVELS.join(", ")}.`);
+  if (input.implemented_by !== undefined) {
+    const family = requiredString(input.implemented_by, "implemented_by", 32);
+    if (!Object.values(config.models).some((item) => item.family === family)) {
+      inputFail(`implemented_by ${JSON.stringify(family)} is not a catalog family; inspect cyberdeck://catalog.`);
+    }
+    if (family === model.family) {
+      inputFail(`${modelName} is in the ${model.family} family that implemented the work; choose another family.`);
+    }
   }
-  if (THINKING_LEVELS.indexOf(thinking) > THINKING_LEVELS.indexOf(role.maxThinking)) {
-    inputFail(`thinking ${thinking} exceeds the ${roleName} maximum ${role.maxThinking}.`);
+  const thinking =
+    input.thinking === undefined ? model.defaultThinking : requiredString(input.thinking, "thinking", 20);
+  if (!model.thinking.includes(thinking)) {
+    inputFail(
+      `thinking ${thinking} is not supported by ${modelName} on ${config.provider}; use one of: ${model.thinking.join(", ")}.`,
+    );
   }
   const contextValues = stringArray(
     input.context_files,
@@ -158,10 +161,10 @@ export async function validateInput(profileName, rawInput, config) {
   );
   return {
     task,
-    role: roleName,
-    model,
+    kind: kindName,
+    model: model.id,
     thinking,
-    promptPreamble: role.promptPreamble,
+    promptPreamble: [config.profiles[profileName].promptPreamble, kind?.preamble].filter(Boolean).join("\n\n"),
     constraints,
     timeoutSeconds: optionalInteger(
       input.timeout_seconds,
@@ -429,7 +432,7 @@ export async function runPi(profileName, rawInput, config, signal) {
     runId,
     createdAt: new Date().toISOString(),
     profile: profileName,
-    role: input.role,
+    kind: input.kind,
     provider: config.provider,
     model: input.model,
     thinking: input.thinking,
@@ -523,7 +526,7 @@ export async function runPi(profileName, rawInput, config, signal) {
     ok,
     run_id: runId,
     profile: profileName,
-    role: input.role,
+    kind: input.kind,
     status,
     model: execution.state.reportedModel || input.model,
     thinking: input.thinking,

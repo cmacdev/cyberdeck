@@ -15,19 +15,22 @@ async function inspect(configPath, options) {
 }
 
 const REFUSALS = [
-  [{ modelAliases: { venice: { example: "" } } }, /modelAliases.venice.example must be a non-empty string/],
-  [{ profiles: (p) => (p.research.tools.push("bash"), p) }, /profiles\.research\.tools cannot include mutating Pi tools: bash/],
+  [{ mutate: (c) => c.profiles.research.tools.push("bash") }, /profiles\.research\.tools cannot include mutating Pi tools: bash/],
   [{ workspaceRoots: ["/"] }, /must not be the filesystem root or the home directory/],
   [{ workspaceRoots: [os.homedir()] }, /must not be the filesystem root or the home directory/],
   [{ provider: "openai" }, /provider must be "openrouter" or "venice"/],
   [{ surprise: 1 }, /configuration has unknown key\(s\): surprise/],
-  [{ profiles: (p) => ((p.research.extra = 1), p) }, /profiles\.research has unknown key\(s\): extra/],
-  [{ profiles: (p) => ((p.research.roles.mechanical.extra = 1), p) }, /roles\.mechanical has unknown key\(s\): extra/],
-  [{ profiles: (p) => ((p.research.defaultRole = "ghost"), p) }, /defaultRole "ghost" is not a defined role/],
-  [{ profiles: (p) => ((p.research.roles.mechanical.model = "other/x"), p) }, /is not allowed by modelPatterns/],
-  [{ profiles: (p) => ((p.research.roles.mechanical.maxThinking = "max"), p) }, /maxThinking cannot exceed the profile maximum high/],
-  [{ profiles: (p) => ((p.research.defaultThinking = "max"), p) }, /defaultThinking cannot exceed maxThinking/],
-  [{ profiles: (p) => ((p.research.roles["Bad-Name"] = p.research.roles.mechanical), p) }, /invalid role name: Bad-Name/],
+  [{ mutate: (c) => (c.profiles.research.extra = 1) }, /profiles\.research has unknown key\(s\): extra/],
+  [{ mutate: (c) => (c.models["model-a"].extra = 1) }, /models\.model-a has unknown key\(s\): extra/],
+  [{ mutate: (c) => (c.defaultModel = "ghost") }, /defaultModel "ghost" is not a model available on openrouter/],
+  [{ mutate: (c) => (c.kinds.review.model = "ghost") }, /kinds\.review\.model "ghost" is not a model available on openrouter/],
+  [{ mutate: (c) => (c.models["model-a"].defaultThinking = "max") }, /models\.model-a\.defaultThinking must be in models\.model-a\.providers\.openrouter\.thinking/],
+  [{ mutate: (c) => (c.models["model-b"].providers.openrouter.thinking = []) }, /models\.model-b\.providers\.openrouter\.thinking must be a non-empty array/],
+  [{ mutate: (c) => (c.models["model-b"].providers = {}) }, /models\.model-b\.providers must list at least one provider/],
+  [{ mutate: (c) => (c.models["model-a"].providers.openrouter.thinking = ["turbo"]) }, /thinking\[0\] must be one of/],
+  [{ mutate: (c) => (c.models["model-a"].tier = "mid") }, /models\.model-a\.tier must be "cheap" or "smart"/],
+  [{ mutate: (c) => (c.models["Bad-Name"] = c.models["model-a"]) }, /invalid model name: Bad-Name/],
+  [{ mutate: (c) => (c.defaultModel = "constructor") }, /defaultModel "constructor" is not a model available/],
   [{ limits: { maxTimeoutSeconds: 86401 } }, /maxTimeoutSeconds cannot exceed 86400/],
   [{ limits: { defaultTimeoutSeconds: 11 } }, /defaultTimeoutSeconds cannot exceed maxTimeoutSeconds/],
   [{ limits: { defaultReturnCharacters: 5001 } }, /defaultReturnCharacters cannot exceed maxReturnCharacters/],
@@ -36,30 +39,31 @@ const REFUSALS = [
   [{ pi: { arguments: "-p" } }, /pi\.arguments must be an array/],
 ];
 
-test("Venice resolves shipped roles and allowed overrides without changing MCP tool names", async (t) => {
+test("Venice resolves catalog models to Venice IDs and drops models it does not serve", async (t) => {
   const fixture = await makeFixture(t);
-  const shipped = JSON.parse(await readFile(path.join(packageDirectory, "cyberdeck.config.json"), "utf8"));
-  const configPath = await fixture.writeConfig("venice", { provider: "venice", profiles: shipped.profiles, modelAliases: shipped.modelAliases });
+  const configPath = await fixture.writeConfig("venice", { provider: "venice" });
   const result = await inspect(configPath);
   assert.equal(result.code, 0, result.stderr);
   const report = JSON.parse(result.stdout);
   assert.equal(report.configuration.provider, "venice");
-  assert.equal(report.catalog.research.roles.mechanical.model, "deepseek-v4-flash-0731");
-  assert.equal(report.catalog.implementation.roles.intellectual.model, "grok-4-7");
+  assert.deepEqual(Object.keys(report.catalog.models), ["model-a", "model-c"]);
+  assert.equal(report.catalog.models["model-a"].id, "model-a");
   assert.deepEqual(report.tools.map((tool) => tool.name), ["research", "implement"]);
-  assert.deepEqual(report.tools[0].inputSchema.properties.model.enum, ["deepseek-v4-flash-0731", "kimi-k3", "grok-4-7"]);
+  assert.deepEqual(report.tools[0].inputSchema.properties.model.enum, ["model-a", "model-c"]);
+  assert.deepEqual(report.tools[0].inputSchema.properties.thinking.enum, ["low", "medium", "high"]);
 });
 
 test("invalid configurations refuse to start with a precise message", async (t) => {
   const fixture = await makeFixture(t);
   for (const [override, expected] of REFUSALS) {
-    const overrides = { ...override };
-    if (typeof override.profiles === "function") {
-      overrides.profiles = override.profiles(structuredClone(makeConfig(fixture).profiles));
+    let overrides = override;
+    if (typeof override.mutate === "function") {
+      overrides = structuredClone(makeConfig(fixture));
+      override.mutate(overrides);
     }
     const configPath = await fixture.writeConfig("bad", overrides);
     const { code, stderr } = await inspect(configPath);
-    assert.equal(code, 1, `expected refusal for ${JSON.stringify(override)}`);
+    assert.equal(code, 1, `expected refusal for ${expected}`);
     assert.match(stderr, /^Cyberdeck failed to start: /);
     assert.match(stderr, expected);
   }
@@ -139,10 +143,8 @@ test("the shipped configuration loads and its tool catalog stays small", async (
   const bytes = Buffer.byteLength(JSON.stringify(buildTools(config)));
   assert.ok(bytes <= CATALOG_BYTE_CEILING, `tool catalog is ${bytes} bytes`);
   assert.equal(config.profiles.research.tools.some((tool) => ["bash", "edit", "write"].includes(tool)), false);
-  assert.ok(
-    new Set(["x-ai/grok-4.7", "moonshotai/kimi-k3"]).has(
-      config.profiles.research.roles.verify.model,
-    ),
-    "judgment-bearing verification must use Grok 4.7 or Kimi K3",
-  );
+  const family = (name) => config.models[name].family;
+  const reviewer = family(config.kinds.review.model);
+  assert.notEqual(reviewer, family(config.kinds.implement.model), "the review kind must not share the implement kind's family");
+  assert.notEqual(reviewer, family(config.defaultModel), "the review kind must not share the default model's family");
 });

@@ -2,7 +2,7 @@ import { chmod, mkdir, readFile, realpath, rename, writeFile } from "node:fs/pro
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { matchesModelPattern, THINKING_LEVELS } from "../src/config.mjs";
+import { pinnedThinkingMap } from "../src/config.mjs";
 
 const baseUrl = "https://api.venice.ai/api/v1";
 
@@ -26,17 +26,24 @@ export async function configureVenice({ existingKey, config, auth, models, fetch
     return response.json();
   };
   await api("/api_keys/rate_limits");
-  const aliases = config.modelAliases?.venice ?? {};
-  const resolve = (model) => aliases[model] ?? model;
-  const patterns = Object.values(config.profiles).flatMap((profile) => profile.modelPatterns.map(resolve));
-  const required = Object.values(config.profiles).flatMap((profile) => Object.values(profile.roles).map((role) => resolve(role.model)));
+  const declared = Object.entries(config.models).filter(([, model]) => model.providers.venice);
+  const required = declared.map(([, model]) => model.providers.venice.id);
   const catalog = (await api("/models?type=text", false)).data;
-  const selected = catalog.filter((model) => matchesModelPattern(model.id, patterns)
+  const selected = catalog.filter((model) => required.includes(model.id)
     && model.type === "text" && model.model_spec?.privacy === "private"
     && model.model_spec?.capabilities?.supportsFunctionCalling === true && model.model_spec.offline === false);
   for (const id of required) {
     if (!selected.some((model) => model.id === id)) {
-      throw new Error(`Venice model ${id} is unavailable, not private, or lacks tool calling. Update the role or modelAliases in cyberdeck.config.json.`);
+      throw new Error(`Venice model ${id} is unavailable, not private, or lacks tool calling. Update or remove its models entry in cyberdeck.config.json.`);
+    }
+  }
+  for (const [name, model] of declared) {
+    const { id, thinking } = model.providers.venice;
+    const capabilities = selected.find((item) => item.id === id).model_spec.capabilities;
+    const missing = thinking.filter((level) => capabilities.supportsReasoning !== true
+      || !capabilities.reasoningEffortOptions?.includes(level === "off" ? "none" : level));
+    if (missing.length) {
+      throw new Error(`Venice model ${id} does not accept thinking ${missing.join(", ")}. Remove it from models.${name}.providers.venice.thinking in cyberdeck.config.json.`);
     }
   }
   const provider = models.providers?.venice ?? {};
@@ -63,10 +70,7 @@ export async function configureVenice({ existingKey, config, auth, models, fetch
     id,
     name: spec.name,
     reasoning: spec.capabilities.supportsReasoning,
-    thinkingLevelMap: Object.fromEntries(THINKING_LEVELS.map((level) => {
-      const effort = level === "off" ? "none" : level;
-      return [level, spec.capabilities.reasoningEffortOptions?.includes(effort) ? effort : null];
-    })),
+    thinkingLevelMap: pinnedThinkingMap(declared.find(([, model]) => model.providers.venice.id === id)[1].providers.venice.thinking),
     input: spec.capabilities.supportsVision ? ["text", "image"] : ["text"],
     contextWindow: spec.availableContextTokens,
     maxTokens: spec.maxCompletionTokens,
@@ -84,6 +88,13 @@ export async function configureVenice({ existingKey, config, auth, models, fetch
   return { auth, models };
 }
 
+export async function writePrivateJson(file, value) {
+  const target = await realpath(file).catch(() => file);
+  await writeFile(`${target}.cyberdeck.tmp`, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600 });
+  await rename(`${target}.cyberdeck.tmp`, target);
+  await chmod(target, 0o600);
+}
+
 async function main() {
   const read = (file, fallback) => readFile(file, "utf8").then(JSON.parse).catch((error) => {
     if (error.code === "ENOENT" && fallback !== undefined) return fallback;
@@ -97,12 +108,7 @@ async function main() {
     config, auth: await read(authPath, {}), models: await read(modelsPath, {}),
   });
   await mkdir(process.env.PI_AGENT_DIR, { recursive: true, mode: 0o700 });
-  for (const [file, value] of [[authPath, result.auth], [modelsPath, result.models]]) {
-    const target = await realpath(file).catch(() => file);
-    await writeFile(`${target}.cyberdeck.tmp`, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600 });
-    await rename(`${target}.cyberdeck.tmp`, target);
-    await chmod(target, 0o600);
-  }
+  for (const [file, value] of [[authPath, result.auth], [modelsPath, result.models]]) await writePrivateJson(file, value);
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

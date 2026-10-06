@@ -124,9 +124,7 @@ test("Venice install replaces a stale policy and preserves provider credentials"
   assert.equal(policy.pi.command, path.join(bin, "pi"));
   assert.equal(policy.artifactDirectory, path.join(cyberdeckHome, "runs"));
   policy.limits.maxTaskCharacters = 1234;
-  policy.profiles.research.roles.verify.model = "z-ai/glm-5.2";
-  policy.profiles.research.modelPatterns.push("z-ai/glm-5.2");
-  policy.modelAliases = { venice: { "moonshotai/kimi-k3": "z-ai/glm-5.2" } };
+  policy.models["kimi-k3"].providers.venice.id = "z-ai-glm-5-2";
   await writeFile(configPath, JSON.stringify(policy));
   const schemaPath = path.join(cyberdeckHome, "cyberdeck.config.schema.json");
   await writeFile(schemaPath, "{\"custom\":true}\n");
@@ -144,21 +142,21 @@ test("Venice install replaces a stale policy and preserves provider credentials"
   assert.match(repeated.stdout, /replaced installed policy/);
   const replaced = JSON.parse(await readFile(configPath, "utf8"));
   assert.equal(replaced.limits.maxTaskCharacters, shipped.limits.maxTaskCharacters);
-  assert.equal(replaced.profiles.research.roles.verify.model, shipped.profiles.research.roles.verify.model);
-  assert.deepEqual(replaced.modelAliases, shipped.modelAliases);
+  assert.deepEqual(replaced.models, shipped.models);
   assert.equal(replaced.provider, "venice");
   assert.equal(replaced.pi.stateDirectory, agentDirectory);
   assert.equal((await stat(configPath)).mode & 0o777, 0o600);
   await execFileAsync("bash", ["install.sh", "--provider", "openrouter"], { cwd: packageDirectory, env });
   const switched = JSON.parse(await readFile(configPath, "utf8"));
   assert.equal(switched.provider, "openrouter");
+  assert.deepEqual(switched.models, shipped.models);
   assert.deepEqual(switched.profiles, shipped.profiles);
   assert.deepEqual(JSON.parse(await readFile(authPath, "utf8")), auth);
   await execFileAsync("bash", ["install.sh", "--provider", "venice"], { cwd: packageDirectory, env });
   assert.equal(JSON.parse(await readFile(configPath, "utf8")).provider, "venice");
   const models = JSON.parse(await readFile(path.join(agentDirectory, "models.json"), "utf8"));
   assert.equal(models.providers.openrouter.compat.openRouterRouting.zdr, true);
-  assert.equal(models.providers.venice.models.length, 3);
+  assert.equal(models.providers.venice.models.length, Object.values(shipped.models).filter((model) => model.providers.venice).length);
 });
 
 test("OpenRouter model and payload overrides cannot weaken the installer ZDR pin", async (t) => {
@@ -401,10 +399,8 @@ test("the uninstall reverses the install and preserves unrelated configuration",
   await writeFile(piSettingsPath, `${JSON.stringify(userSettings, null, 2)}\n`);
 
   await execFileAsync("bash", ["install.sh"], { cwd: packageDirectory, env });
-  assert.deepEqual(
-    JSON.parse(await readFile(modelsPath, "utf8")).providers.openrouter.compat.openRouterRouting,
-    { order: ["xai"], zdr: true, data_collection: "deny" },
-  );
+  const installedModels = JSON.parse(await readFile(modelsPath, "utf8"));
+  assert.deepEqual(installedModels.providers.openrouter.compat, userRouting.providers.openrouter.compat);
   assert.deepEqual(JSON.parse(await readFile(piSettingsPath, "utf8")), userSettings, "install preserves settings without a default model");
   const legacySettings = {
     ...userSettings,
@@ -433,7 +429,7 @@ test("the uninstall reverses the install and preserves unrelated configuration",
   const codex = await readFile(path.join(fixture.root, ".codex", "config.toml"), "utf8");
   assert.match(codex, /^model = "keep-me"$/m);
   assert.doesNotMatch(codex, /cyberdeck/);
-  assert.deepEqual(JSON.parse(await readFile(modelsPath, "utf8")), userRouting);
+  assert.deepEqual(JSON.parse(await readFile(modelsPath, "utf8")), installedModels, "uninstall leaves provider settings");
   assert.deepEqual(JSON.parse(await readFile(piSettingsPath, "utf8")), legacySettings, "uninstall preserves settings marked by an older installer");
   for (const target of [".claude/skills/deck", ".codex/skills/deck", ".cyberdeck"]) {
     assert.equal(existsSync(path.join(fixture.root, target)), false, `${target} should be gone`);
@@ -666,8 +662,8 @@ test("the shipped deck skill is concise and names the Cyberdeck routing contract
     "`research`",
     "`implement`",
     "`working_directory`",
-    "`mechanical`",
-    "`gritty`",
+    "`implemented_by`",
+    "`cyberdeck://catalog`",
     "Retry only upward in intelligence",
   ]) {
     assert.ok(skill.includes(term), `missing ${term}`);

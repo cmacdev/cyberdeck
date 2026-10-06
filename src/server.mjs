@@ -76,23 +76,15 @@ function clamp(value, maximum) {
 
 function rejectedResult(profileName, rawInput, config, error) {
   const profile = config.profiles[profileName];
-  const requestedRole =
-    typeof rawInput?.role === "string" ? clamp(rawInput.role, 32) : profile.defaultRole;
-  const role = profile.roles[requestedRole];
+  const echo = (value, maximum) => (typeof value === "string" ? clamp(value, maximum) : null);
   return {
     ok: false,
     run_id: null,
     profile: profileName,
-    role: requestedRole,
+    kind: echo(rawInput?.kind, 32),
     status: "rejected",
-    model:
-      typeof rawInput?.model === "string"
-        ? clamp(rawInput.model, 200)
-        : (role?.model ?? null),
-    thinking:
-      typeof rawInput?.thinking === "string"
-        ? clamp(rawInput.thinking, 20)
-        : (role?.defaultThinking ?? profile.defaultThinking),
+    model: echo(rawInput?.model, 200),
+    thinking: echo(rawInput?.thinking, 20),
     tools: profile.tools,
     exit_code: null,
     duration_ms: 0,
@@ -133,9 +125,9 @@ function listedResources() {
   return [
     {
       uri: CATALOG_RESOURCE_URI,
-      name: "Cyberdeck role catalog",
-      title: "Cyberdeck role catalog",
-      description: "Recommended roles, bound models, and when to use each one.",
+      name: "Cyberdeck model catalog",
+      title: "Cyberdeck model catalog",
+      description: "Models with tier, family, strengths, and thinking levels, plus kind presets.",
       mimeType: "application/json",
     },
     {
@@ -143,7 +135,7 @@ function listedResources() {
       name: "Resolved Cyberdeck profiles",
       title: "Cyberdeck profile policy",
       description:
-        "Resolved roles, model patterns, Pi tool allowlists, path roots, limits, and security boundary.",
+        "Resolved Pi tool allowlists, path roots, limits, and security boundary.",
       mimeType: "application/json",
     },
   ];

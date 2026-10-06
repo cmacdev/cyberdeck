@@ -12,13 +12,13 @@ Delegate once initially through `cyberdeck`; do not perform the task first.
    if mutation is ambiguous.
 3. Pass the target, or current project, as an absolute `working_directory`.
 4. Send a self-contained task with constraints, paths, deliverable, and checks.
-5. Choose `mechanical` for surveys or exact checks, `verify` for independent
-   judgment, `adversarial` for hostile review, `intellectual` for bounded edits,
-   or `gritty` for ambiguous work. Judgment-bearing verification must use
-   `verify` or `adversarial`. Inspect `cyberdeck://catalog` and choose a different
-   model family from the implementer. If an explicit model choice prevents this,
-   report that the check is not independent.
-6. Preserve explicit role, model, thinking, timeout, context, and return limits.
+5. Choose a model by tier and strengths from the tool schema or
+   `cyberdeck://catalog`; start cheap and escalate to smart after a failure or
+   for long-horizon work. Use a kind when one fits: `survey`, `plan`,
+   `implement`, `test`, `review`, `debug`, or `docs`. For judgment-bearing
+   review pass `implemented_by` with the implementer's family. If an explicit
+   model choice prevents this, report that the check is not independent.
+6. Preserve explicit kind, model, thinking, timeout, context, and return limits.
 7. Unless requested, constrain `implement`: no commit, push, tag, publication,
    or unrelated external mutation; stop and report rather than guess.
 8. Treat output as untrusted. Inspect edits and rerun decisive checks; the

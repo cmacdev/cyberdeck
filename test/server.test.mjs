@@ -116,22 +116,25 @@ test("tools/list exposes exactly research and implement with honest schemas", as
   const properties = research.inputSchema.properties;
   assert.deepEqual(research.inputSchema.required, ["task", "working_directory"]);
   assert.equal(research.inputSchema.additionalProperties, false);
-  assert.deepEqual(properties.role.enum, ["mechanical", "verify"]);
-  assert.equal(properties.role.default, "mechanical");
-  assert.deepEqual(properties.thinking.enum, ["off", "minimal", "low", "medium", "high"]);
-  assert.equal(properties.model.enum, undefined, "wildcard patterns publish no enum");
-  assert.deepEqual(
-    implement.inputSchema.properties.model.enum,
-    ["implementation/model-k", "implementation/model-b"],
-    "role order, then exact patterns",
-  );
+  assert.deepEqual(properties.kind.enum, ["review"]);
+  assert.deepEqual(properties.model.enum, ["model-a", "model-c", "model-b"]);
+  assert.deepEqual(properties.thinking.enum, ["off", "minimal", "low", "medium", "high", "max"]);
+  assert.deepEqual(properties.implemented_by.enum, ["alpha", "gamma", "beta"]);
+  assert.deepEqual(implement.inputSchema.properties.model.enum, properties.model.enum);
+  assert.deepEqual(implement.inputSchema.properties.thinking, properties.thinking);
   assert.equal(properties.working_directory.maxLength, 4096);
   assert.equal(properties.context_files.items.maxLength, 4096);
-  assert.equal(properties.model.maxLength, 200);
   assert.equal(properties.timeout_seconds.maximum, 10);
   assert.equal(properties.return_characters.maximum, 5000);
   assert.match(research.outputSchema.properties.final_output.description, /Never stderr/);
-  assert.match(research.description, /mechanical \(research\/model-a\)/);
+  assert.match(properties.model.description, /model-a \(cheap, alpha; off\|minimal\|low\|medium\|high, default medium\): Cheap survey/);
+
+});
+
+test("a catalog without kinds publishes no kind argument", async (t) => {
+  const { client } = await serverFor(t, { kinds: {} });
+  const [research] = (await client.request("tools/list")).tools;
+  assert.equal(research.inputSchema.properties.kind, undefined);
 });
 
 test("resources list the catalog and resolved profiles", async (t) => {
@@ -144,8 +147,9 @@ test("resources list the catalog and resolved profiles", async (t) => {
   const catalog = JSON.parse(
     (await client.request("resources/read", { uri: "cyberdeck://catalog" })).contents[0].text,
   );
-  assert.equal(catalog.research.tool, "research");
-  assert.equal(catalog.research.roles.mechanical.model, "research/model-a");
+  assert.equal(catalog.defaultModel, "model-a");
+  assert.equal(catalog.models["model-a"].id, "research/model-a");
+  assert.equal(catalog.kinds.review.model, "model-c");
   const profiles = JSON.parse(
     (await client.request("resources/read", { uri: "cyberdeck://profiles" })).contents[0].text,
   );
@@ -159,12 +163,12 @@ test("a replaced policy is reloaded without a client restart", async (t) => {
   const client = startServer(t, configPath, { cwd: fixture.workspace });
   const before = await client.request("tools/list");
   const updated = makeConfig(fixture, { limits: { maxTaskCharacters: 4321 } });
-  updated.profiles.research.roles.mechanical.model = "research/model-z";
+  updated.models["model-a"].providers.openrouter.id = "research/model-z";
   await writeFile(configPath, `${JSON.stringify(updated, null, 2)}\n`);
-  const profiles = JSON.parse(
-    (await client.request("resources/read", { uri: "cyberdeck://profiles" })).contents[0].text,
+  const catalog = JSON.parse(
+    (await client.request("resources/read", { uri: "cyberdeck://catalog" })).contents[0].text,
   );
-  assert.equal(profiles.profiles.research.roles.mechanical.model, "research/model-z");
+  assert.equal(catalog.models["model-a"].id, "research/model-z");
   const after = await client.request("tools/list");
   assert.notEqual(JSON.stringify(after.tools), JSON.stringify(before.tools));
   const changed = await client.waitForMessage(
@@ -196,7 +200,7 @@ test("an in-flight run keeps the policy it started with", async (t) => {
     await sleep(10);
   }
   const updated = makeConfig(fixture, { artifactDirectory: path.join(fixture.root, "other-runs") });
-  updated.profiles.research.roles.mechanical.model = "research/model-z";
+  updated.models["model-a"].providers.openrouter.id = "research/model-z";
   await writeFile(configPath, `${JSON.stringify(updated, null, 2)}\n`);
   await client.request("ping");
   const result = await slow;
@@ -278,7 +282,7 @@ test("notifications never receive a response", async (t) => {
   assert.equal(client.messages.length, 1);
 });
 
-test("research: default role, flags, environment, usage, and artifacts", async (t) => {
+test("research: default model, flags, environment, usage, and artifacts", async (t) => {
   const { fixture, client } = await serverFor(t);
   const result = await call(client, "research", {
     task: "Inspect the fixture and summarize it.",
@@ -293,7 +297,7 @@ test("research: default role, flags, environment, usage, and artifacts", async (
   assert.equal(structured.ok, true);
   assert.equal(structured.status, "succeeded");
   assert.equal(structured.profile, "research");
-  assert.equal(structured.role, "mechanical");
+  assert.equal(structured.kind, null);
   assert.equal(structured.model, "research/model-a");
   assert.equal(structured.thinking, "high");
   assert.deepEqual(structured.tools, RESEARCH_TOOLS);
@@ -334,7 +338,7 @@ test("research: default role, flags, environment, usage, and artifacts", async (
   }
   const recordedRequest = JSON.parse(await readFile(structured.artifacts.request, "utf8"));
   assert.equal(recordedRequest.model, "research/model-a");
-  assert.equal(recordedRequest.role, "mechanical");
+  assert.equal(recordedRequest.kind, null);
   assert.deepEqual(recordedRequest.tools, RESEARCH_TOOLS);
   assert.deepEqual(recordedRequest.contextFiles, [fixture.canonicalContextFile]);
   const recordedResult = JSON.parse(await readFile(structured.artifacts.result, "utf8"));
@@ -343,62 +347,65 @@ test("research: default role, flags, environment, usage, and artifacts", async (
   assert.equal(client.stderr(), "");
 });
 
-test("a named role binds its model and its own prompt preamble", async (t) => {
+test("a kind sets its model and appends its preamble", async (t) => {
   const { fixture, client } = await serverFor(t);
-  const result = await call(client, "research", callArguments(fixture, { role: "verify" }));
-  assert.equal(result.structuredContent.role, "verify");
+  const result = await call(client, "research", callArguments(fixture, { kind: "review" }));
+  assert.equal(result.structuredContent.kind, "review");
   const invocation = JSON.parse(result.structuredContent.final_output);
   assert.equal(argumentValue(invocation.argv, "--model"), "research/model-c");
   assert.equal(argumentValue(invocation.argv, "--thinking"), "high");
-  assert.equal(argumentValue(invocation.argv, "--append-system-prompt"), "Verify only.");
+  assert.equal(argumentValue(invocation.argv, "--append-system-prompt"), "Research only.\n\nVerify only.");
+  const overridden = await call(client, "research", callArguments(fixture, { kind: "review", model: "model-b", thinking: "max" }));
+  const overriddenInvocation = JSON.parse(overridden.structuredContent.final_output);
+  assert.equal(argumentValue(overriddenInvocation.argv, "--model"), "implementation/model-b");
+  assert.equal(argumentValue(overriddenInvocation.argv, "--thinking"), "max");
 });
 
-test("implement uses the write-capable profile", async (t) => {
+test("implement uses the write-capable tools with any catalog model", async (t) => {
   const { fixture, client } = await serverFor(t);
-  const result = await call(client, "implement", callArguments(fixture, { role: "intellectual" }));
+  const result = await call(client, "implement", callArguments(fixture, { model: "model-c" }));
   assert.equal(result.structuredContent.profile, "implementation");
-  assert.equal(result.structuredContent.model, "implementation/model-b");
+  assert.equal(result.structuredContent.model, "research/model-c");
   const invocation = JSON.parse(result.structuredContent.final_output);
   assert.equal(argumentValue(invocation.argv, "--tools"), "read,grep,find,ls,bash,edit,write");
+  assert.equal(argumentValue(invocation.argv, "--append-system-prompt"), "Implement and verify.");
 });
 
-test("a model override is accepted inside the profile and rejected outside it", async (t) => {
+test("model, kind, thinking, and reviewer family are validated against the catalog", async (t) => {
   const { fixture, client } = await serverFor(t);
-  const accepted = await call(client, "research", callArguments(fixture, { model: "research/model-z" }));
-  assert.equal(accepted.structuredContent.model, "research/model-z");
-  const rejected = await call(
-    client,
-    "research",
-    callArguments(fixture, { model: "implementation/model-b" }),
-  );
-  assert.equal(rejected.isError, true);
-  assert.equal(rejected.structuredContent.status, "rejected");
-  assert.equal(rejected.structuredContent.run_id, null);
-  assert.match(rejected.structuredContent.error, /not allowed/);
-  assert.match(rejected.content[0].text, /^Cyberdeck research rejected: /);
-  const tooLong = await call(client, "research", callArguments(fixture, { model: `research/${"m".repeat(200)}` }));
-  assert.match(tooLong.structuredContent.error, /model cannot exceed 200/);
-});
-
-test("role and thinking are validated against the catalog", async (t) => {
-  const { fixture, client } = await serverFor(t);
-  const unknownRole = await call(client, "research", callArguments(fixture, { role: "wizard" }));
-  assert.match(unknownRole.structuredContent.error, /role "wizard" is not defined.*cyberdeck:\/\/catalog/);
-  const tooHigh = await call(client, "research", callArguments(fixture, { thinking: "max" }));
-  assert.match(tooHigh.structuredContent.error, /thinking max exceeds the mechanical maximum high/);
-  const atCeiling = await call(client, "research", callArguments(fixture, { thinking: "high" }));
-  assert.equal(atCeiling.structuredContent.ok, true);
+  const unknownModel = await call(client, "research", callArguments(fixture, { model: "research/model-a" }));
+  assert.equal(unknownModel.isError, true);
+  assert.equal(unknownModel.structuredContent.status, "rejected");
+  assert.equal(unknownModel.structuredContent.run_id, null);
+  assert.match(unknownModel.structuredContent.error, /model "research\/model-a" is not a model available on openrouter.*cyberdeck:\/\/catalog/);
+  assert.match(unknownModel.content[0].text, /^Cyberdeck research rejected: /);
+  const tooLong = await call(client, "research", callArguments(fixture, { model: "m".repeat(33) }));
+  assert.match(tooLong.structuredContent.error, /model cannot exceed 32/);
+  const unknownKind = await call(client, "research", callArguments(fixture, { kind: "wizard" }));
+  assert.match(unknownKind.structuredContent.error, /kind "wizard" is not defined.*cyberdeck:\/\/catalog/);
+  const inherited = await call(client, "research", callArguments(fixture, { kind: "constructor", model: "toString" }));
+  assert.equal(inherited.structuredContent.status, "rejected");
+  const unsupported = await call(client, "research", callArguments(fixture, { thinking: "max" }));
+  assert.match(unsupported.structuredContent.error, /thinking max is not supported by model-a on openrouter; use one of: off, minimal, low, medium, high\./);
   const invalid = await call(client, "research", callArguments(fixture, { thinking: "turbo" }));
-  assert.match(invalid.structuredContent.error, /thinking must be one of/);
+  assert.match(invalid.structuredContent.error, /thinking turbo is not supported/);
+  const notString = await call(client, "research", callArguments(fixture, { thinking: 5 }));
+  assert.match(notString.structuredContent.error, /thinking must be a non-empty string/);
+  const sameFamily = await call(client, "research", callArguments(fixture, { kind: "review", implemented_by: "gamma" }));
+  assert.match(sameFamily.structuredContent.error, /model-c is in the gamma family that implemented the work; choose another family/);
+  const unknownFamily = await call(client, "research", callArguments(fixture, { kind: "review", implemented_by: "Gamma" }));
+  assert.match(unknownFamily.structuredContent.error, /implemented_by "Gamma" is not a catalog family/);
+  const otherFamily = await call(client, "research", callArguments(fixture, { kind: "review", implemented_by: "beta" }));
+  assert.equal(otherFamily.structuredContent.ok, true);
 });
 
 test("unknown arguments and oversized fields are rejected before Pi starts", async (t) => {
   const { fixture, client } = await serverFor(t);
   const unknown = await call(client, "research", callArguments(fixture, { extra: 1 }));
   assert.match(unknown.structuredContent.error, /Unknown argument\(s\): extra/);
-  const longRole = await call(client, "research", callArguments(fixture, { role: "r".repeat(50000) }));
-  assert.match(longRole.structuredContent.error, /role cannot exceed 32/);
-  assert.ok(longRole.structuredContent.role.length <= 33, "echoed role is clamped");
+  const longKind = await call(client, "research", callArguments(fixture, { kind: "r".repeat(50000) }));
+  assert.match(longKind.structuredContent.error, /kind cannot exceed 32/);
+  assert.ok(longKind.structuredContent.kind.length <= 33, "echoed kind is clamped");
   const longTask = await call(client, "research", callArguments(fixture, { task: "t".repeat(10001) }));
   assert.match(longTask.structuredContent.error, /task cannot exceed 10000/);
   const manyConstraints = await call(

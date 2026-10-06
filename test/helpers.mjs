@@ -62,47 +62,47 @@ export function makeConfig(fixture, overrides = {}) {
       maxTaskCharacters: 10000,
       maxContextFiles: 4,
     },
-    profiles: {
-      research: {
-        modelPatterns: ["research/*"],
-        defaultRole: "mechanical",
+    defaultModel: "model-a",
+    models: {
+      "model-a": {
+        family: "alpha",
+        tier: "cheap",
+        strengths: "Cheap survey and citation.",
         defaultThinking: "medium",
-        maxThinking: "high",
-        tools: ["read", "grep", "find", "ls", "web_search"],
-        promptPreamble: "Research only.",
-        roles: {
-          mechanical: {
-            model: "research/model-a",
-            when: "Cheap survey and citation.",
-            defaultThinking: "medium",
-            maxThinking: "high",
-          },
-          verify: {
-            model: "research/model-c",
-            when: "Independent check of claimed results.",
-            defaultThinking: "high",
-            maxThinking: "high",
-            promptPreamble: "Verify only.",
-          },
+        providers: {
+          openrouter: { id: "research/model-a", thinking: ["off", "minimal", "low", "medium", "high"] },
+          venice: { id: "model-a", thinking: ["low", "medium"] },
         },
       },
-      implementation: {
-        modelPatterns: ["implementation/model-k", "implementation/model-b"],
-        defaultRole: "intellectual",
+      "model-c": {
+        family: "gamma",
+        tier: "smart",
+        strengths: "Independent check of claimed results.",
         defaultThinking: "high",
-        maxThinking: "max",
+        providers: {
+          openrouter: { id: "research/model-c", thinking: ["low", "high"] },
+          venice: { id: "model-c", thinking: ["high"] },
+        },
+      },
+      "model-b": {
+        family: "beta",
+        tier: "cheap",
+        strengths: "Bounded spec-exact diffs.",
+        defaultThinking: "high",
+        providers: { openrouter: { id: "implementation/model-b", thinking: ["low", "high", "max"] } },
+      },
+    },
+    kinds: {
+      review: { model: "model-c", preamble: "Verify only." },
+    },
+    profiles: {
+      research: {
+        tools: ["read", "grep", "find", "ls", "web_search"],
+        promptPreamble: "Research only.",
+      },
+      implementation: {
         tools: ["read", "grep", "find", "ls", "bash", "edit", "write"],
         promptPreamble: "Implement and verify.",
-        roles: {
-          gritty: {
-            model: "implementation/model-k",
-            when: "Ambiguous or cross-cutting implementation.",
-          },
-          intellectual: {
-            model: "implementation/model-b",
-            when: "Bounded spec-exact diffs.",
-          },
-        },
       },
     },
   };

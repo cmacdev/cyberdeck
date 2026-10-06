@@ -21,7 +21,8 @@ Every stop prints its cause; apply the fix and re-run the same command.
 | `no terminal available for the API key prompt` | Run in an interactive terminal (the prompt reads `/dev/tty`), or set `OPENROUTER_API_KEY` for the installer. Agents: hand this step to the user; never ask for or handle the key. |
 | `unknown provider` | Re-run with `--provider openrouter` or `--provider venice`. |
 | `no terminal available for the Venice key prompt` / `empty Venice key` | Set `VENICE_API_KEY` or run interactively and enter an inference key with Private Only selected in Venice API settings. |
-| `Venice setup failed` | Fix the reported API, model, or JSON error. Use a valid inference key with Private Only selected in Venice API settings. The installer requires an explicit service refusal of a synthetic anonymous text request and private, available, tool-capable role models. Remove conflicting Venice auth/endpoint overrides from `models.json`. |
+| `Venice setup failed` | Fix the reported API, model, or JSON error. Use a valid inference key with Private Only selected in Venice API settings. The installer requires an explicit service refusal of a synthetic anonymous text request and private, available, tool-capable catalog models that accept every listed thinking level. Remove conflicting Venice auth/endpoint overrides from `models.json`. |
+| `OpenRouter setup failed` | Make `~/.pi/agent/models.json` valid JSON (Pi accepts comments there; this installer does not) and writable, then re-run. |
 | `empty API key` / `Pi does not report OpenRouter credentials as ready` | Nothing was stored, or Pi rejected the key. Check `pi auth check --provider openrouter`; re-run to be prompted again. |
 | `pi was installed or detected but cannot now be found on PATH` | Add npm's global `bin` directory to the current shell's `PATH` and re-run. |
 | `configured Pi command … is not executable` | Restore the detected Pi at the path printed in the error, then re-run. |
@@ -53,8 +54,8 @@ Restart the client after a first install so it spawns the server. Clients bound 
 `~/.cyberdeck/cyberdeck.config.json` pick up a reinstall without a restart. `claude mcp get cyberdeck` (Claude Code) or `~/.codex/config.toml` (Codex
 CLI, ChatGPT Desktop) shows the registration.
 `node ~/.cyberdeck/app/bin/cyberdeck-mcp.mjs --config ~/.cyberdeck/cyberdeck.config.json --inspect`
-prints the resolved contract (checkout installs: use the checkout path from the installer summary). To check the real Pi path once, call `research` with role
-`mechanical`, `thinking: "off"`, and task `Reply with exactly the word READY and nothing else.`,
+prints the resolved contract (checkout installs: use the checkout path from the installer summary). To check the real Pi path once, call `research` with model
+`deepseek-flash`, `thinking: "low"`, and task `Reply with exactly the word READY and nothing else.`,
 and expect `final_output` containing `READY`.
 
 ## Manual client setup
@@ -94,7 +95,7 @@ Re-run the same install command. It resets `~/.cyberdeck/app` to the published v
 (local changes there are discarded — develop in a checkout instead) and replaces
 `~/.cyberdeck/cyberdeck.config.json` with that version's policy for the selected provider.
 Machine paths are rewritten: the Pi executable, Pi state directory, artifact directory, and
-schema path. Roles, model aliases, limits, workspace roots, and Pi arguments are not preserved.
+schema path. Models, kinds, limits, workspace roots, and Pi arguments are not preserved.
 Unrelated Pi settings are. The selected provider's privacy controls are reapplied before that
 replacement; a failed Venice check leaves the previous policy in place. Venice reuses its saved
 inference key, checks privacy enforcement against the published policy, and refreshes model
@@ -106,7 +107,7 @@ Delegated runs suppress Pi's update notices by design; interactive `pi` shows th
 Servers bound to the installed policy pick up the replacement without a restart.
 
 Edit the installed policy only for changes you are willing to reapply after the next install.
-A model change must update both its role binding and the profile's `modelPatterns`. Validate with
+A model change edits its `models` entry: per-provider `id` and accepted `thinking`. Validate with
 `node ~/.cyberdeck/app/bin/cyberdeck-mcp.mjs --config ~/.cyberdeck/cyberdeck.config.json --inspect`,
 using the checkout path when applicable. A server bound to that file picks up the change. Read
 `cyberdeck://catalog` and `cyberdeck://profiles` to confirm.

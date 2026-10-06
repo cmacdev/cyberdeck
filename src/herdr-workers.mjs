@@ -116,7 +116,7 @@ export class HerdrWorkers {
     if (!this.config.profiles[profile]) throw new Error("profile must be research or implementation.");
     const resolved = await validateInput(profile, {
       task: "Start an interactive worker.", working_directory: input.working_directory || this.cwd,
-      role: input.role, model: input.model, thinking: input.thinking,
+      kind: input.kind, model: input.model, thinking: input.thinking, implemented_by: input.implemented_by,
     }, this.config);
     const extension = path.join(this.agentDirectory, "extensions", "herdr-agent-state.ts");
     await access(extension);
@@ -136,7 +136,7 @@ export class HerdrWorkers {
     if (resolved.promptPreamble) args.push("--append-system-prompt", resolved.promptPreamble);
     try {
       const result = await this.call(["agent", "start", input.name, "--kind", "pi", "--pane", pane, "--", ...args], { signal, timeout: 35000 });
-      return { session: this.session, agent: result.agent, profile, role: resolved.role, model: resolved.model };
+      return { session: this.session, agent: result.agent, profile, kind: resolved.kind, model: resolved.model };
     } catch (error) {
       throw new Error(`${error.message}\nStart may have reached pane ${pane} in ${this.session}. Use workers list/read to inspect ${input.name}; close it explicitly if abandoning the start. Do not blindly retry.`);
     }
