@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import { configureOpenRouter } from "../bin/configure-openrouter.mjs";
-import { configureVenice } from "../bin/configure-venice.mjs";
+import { configureVenice, VENICE_ANONYMIZED_EXCEPTION_ID } from "../bin/configure-venice.mjs";
 import { inferenceKey, veniceFixture, veniceModelIds } from "../fixtures/venice-api.mjs";
 
 const config = JSON.parse(await readFile(new URL("../cyberdeck.config.json", import.meta.url), "utf8"));
@@ -48,6 +48,15 @@ test("Venice fails closed on anonymous or unverified catalog models before probi
     await assert.rejects(setup(fixture), /not private/);
     assert.equal(fixture.calls.length, 2);
   }
+});
+
+test("Venice allows only the abliterated large v2 model to be anonymized", async () => {
+  const id = VENICE_ANONYMIZED_EXCEPTION_ID;
+  assert.equal(config.models["abliterated-large-v2"].providers.venice.id, id);
+  const allowed = await setup(veniceFixture({ modelPrivacyById: { [id]: "anonymized" } }));
+  assert.ok(allowed.models.providers.venice.models.some((model) => model.id === id));
+  await assert.rejects(setup(veniceFixture({ modelPrivacyById: { "grok-4-7": "anonymized" } })), /Venice model grok-4-7 is unavailable, not private/);
+  await assert.rejects(setup(veniceFixture({ modelPrivacyById: { [id]: "unknown" } })), new RegExp(`Venice model ${id} is unavailable, not private`));
 });
 
 test("Venice rejects failed authentication and unrelated refusals without exposing secrets", async () => {

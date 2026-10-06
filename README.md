@@ -51,7 +51,7 @@ Cyberdeck is a local stdio MCP server with no npm dependencies. The caller decid
 | `kimi-k3` | smart | kimi | low, **high**, max | `moonshotai/kimi-k3` | `kimi-k3` | Long-horizon autonomy and hard reviews; very verbose, priciest |
 | `abliterated-large-v2` | smart | abliterated | – | – | `abliteration-abliterated-model-large-v2` (no thinking control) | Cybersecurity and adversarial work; abliterated, Venice only |
 
-Only private models: Venice installs register only private models (– means not offered on that provider), and OpenRouter requests are pinned to zero data retention. For an independent review, pass `implemented_by` with the implementer's family; a reviewer of that family is rejected.
+Only private models: Venice installs register only private models except `abliteration-abliterated-model-large-v2`, which is anonymized (– means not offered on that provider), and OpenRouter requests are pinned to zero data retention. For an independent review, pass `implemented_by` with the implementer's family; a reviewer of that family is rejected.
 
 MCP runs are stateless (`--no-session`). Herdr workers are persistent Pi sessions. Shipped `pi.arguments` are `--no-extensions --no-skills`; a reinstall replaces them with the published policy. With `pi.stateDirectory` null, Pi reuses user-level auth and settings. With `pi.loadContextFiles` true, it loads `AGENTS.md` and `CLAUDE.md` from the working directory.
 
