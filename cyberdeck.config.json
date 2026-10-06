@@ -110,6 +110,17 @@
           "thinking": ["low", "high", "max"]
         }
       }
+    },
+    "abliterated-large-v2": {
+      "family": "abliterated",
+      "tier": "smart",
+      "strengths": "Cybersecurity and adversarial work; abliterated, Venice only.",
+      "providers": {
+        "venice": {
+          "id": "abliteration-abliterated-model-large-v2",
+          "thinking": []
+        }
+      }
     }
   },
   "kinds": {

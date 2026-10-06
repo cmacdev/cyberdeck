@@ -112,6 +112,7 @@ test("OpenRouter pins every catalog model to exactly its listed thinking levels 
   const provider = models.providers.openrouter;
   assert.deepEqual(provider.compat.openRouterRouting, { order: ["keep"] });
   for (const model of Object.values(config.models)) {
+    if (!model.providers.openrouter) continue;
     const override = provider.modelOverrides[model.providers.openrouter.id];
     const supported = Object.entries(override.thinkingLevelMap).filter(([, value]) => value !== null).map(([level]) => level);
     assert.deepEqual(supported, model.providers.openrouter.thinking);

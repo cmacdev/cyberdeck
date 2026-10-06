@@ -38,7 +38,7 @@ Cyberdeck is a local stdio MCP server with no npm dependencies. The caller decid
 
 ## Tools and models
 
-`research` refuses Pi's `bash`, `edit`, and `write` tools. `implement` is annotated destructive and open-world. Any model works with either tool. Omit `model` for the `kind` preset's model, else `defaultModel`. `model` is the catalog key (`grok-4-7`), not the provider ID (`x-ai/grok-4.7`). Omit `thinking` for the model's default (bold); a level the model does not list is rejected, and every install pins Pi to exactly the listed levels, so Pi never substitutes another. The Thinking column lists OpenRouter levels; the Venice column notes levels that differ there. "no thinking control" means Venice sets it and a `thinking` argument is rejected. Policy is `cyberdeck.config.json`. `npm run inspect` prints the resolved contract; `cyberdeck://catalog` and `cyberdeck://profiles` expose it.
+`research` refuses Pi's `bash`, `edit`, and `write` tools. `implement` is annotated destructive and open-world. Any model works with either tool. Omit `model` for the `kind` preset's model, else `defaultModel`. `model` is the catalog key (`grok-4-7`), not the provider ID (`x-ai/grok-4.7`). Omit `thinking` for the model's default (bold); a level the model does not list is rejected, and every install pins Pi to exactly the listed levels, so Pi never substitutes another. The Thinking column lists OpenRouter levels (– for Venice-only models); the Venice column notes levels that differ there. "no thinking control" means Venice sets it and a `thinking` argument is rejected. Policy is `cyberdeck.config.json`. `npm run inspect` prints the resolved contract; `cyberdeck://catalog` and `cyberdeck://profiles` expose it.
 
 | Model | Tier | Family | Thinking | OpenRouter | Venice | Strengths |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -49,8 +49,9 @@ Cyberdeck is a local stdio MCP server with no npm dependencies. The caller decid
 | `deepseek-pro` | smart | deepseek | low, **high**, max | `deepseek/deepseek-v4-pro-0813` | `deepseek-v4-pro-0813` | Smart reader for very large context |
 | `grok-4-7` | smart | grok | low, medium, **high**, xhigh | `x-ai/grok-4.7` | `grok-4-7` | Default smart worker; price doubles over 200K context |
 | `kimi-k3` | smart | kimi | low, **high**, max | `moonshotai/kimi-k3` | `kimi-k3` | Long-horizon autonomy and hard reviews; very verbose, priciest |
+| `abliterated-large-v2` | smart | abliterated | – | – | `abliteration-abliterated-model-large-v2` (no thinking control) | Cybersecurity and adversarial work; abliterated, Venice only |
 
-Only private models: Venice installs register only private models (– means not offered on Venice), and OpenRouter requests are pinned to zero data retention. For an independent review, pass `implemented_by` with the implementer's family; a reviewer of that family is rejected.
+Only private models: Venice installs register only private models (– means not offered on that provider), and OpenRouter requests are pinned to zero data retention. For an independent review, pass `implemented_by` with the implementer's family; a reviewer of that family is rejected.
 
 MCP runs are stateless (`--no-session`). Herdr workers are persistent Pi sessions. Shipped `pi.arguments` are `--no-extensions --no-skills`; a reinstall replaces them with the published policy. With `pi.stateDirectory` null, Pi reuses user-level auth and settings. With `pi.loadContextFiles` true, it loads `AGENTS.md` and `CLAUDE.md` from the working directory.
 
