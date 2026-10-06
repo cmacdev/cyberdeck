@@ -5,6 +5,12 @@ import { fileURLToPath } from "node:url";
 import { pinnedThinkingMap, THINKING_LEVELS } from "../src/config.mjs";
 
 const baseUrl = "https://api.venice.ai/api/v1";
+export const VENICE_ANONYMIZED_EXCEPTION_ID = "abliteration-abliterated-model-large-v2";
+
+function veniceModelPrivacyAccepted(model) {
+  const privacy = model.model_spec?.privacy;
+  return privacy === "private" || (model.id === VENICE_ANONYMIZED_EXCEPTION_ID && privacy === "anonymized");
+}
 
 export async function configureVenice({ existingKey, config, auth, models, fetch: request = fetch }) {
   const key = auth.venice?.key ?? existingKey;
@@ -30,7 +36,7 @@ export async function configureVenice({ existingKey, config, auth, models, fetch
   const required = declared.map(([, model]) => model.providers.venice.id);
   const catalog = (await api("/models?type=text", false)).data;
   const selected = catalog.filter((model) => required.includes(model.id)
-    && model.type === "text" && model.model_spec?.privacy === "private"
+    && model.type === "text" && veniceModelPrivacyAccepted(model)
     && model.model_spec?.capabilities?.supportsFunctionCalling === true && model.model_spec.offline === false);
   for (const id of required) {
     if (!selected.some((model) => model.id === id)) {

@@ -75,14 +75,16 @@ test("the README model and kind tables mirror the shipped configuration", async 
   assert.deepEqual(rows.map((row) => row[0]), Object.keys(shipped.models).map((name) => `\`${name}\``));
   for (const [name, model] of Object.entries(shipped.models)) {
     const row = rows.find((cells) => cells[0] === `\`${name}\``);
-    const thinking = model.providers.openrouter.thinking;
+    const openrouter = model.providers.openrouter;
     assert.deepEqual(row.slice(1, 3), [model.tier, model.family], name);
-    assert.equal(row[3], thinking.map((level) => (level === model.defaultThinking ? `**${level}**` : level)).join(", ") || "none", name);
+    assert.equal(row[3], openrouter
+      ? openrouter.thinking.map((level) => (level === model.defaultThinking ? `**${level}**` : level)).join(", ") || "none"
+      : "–", name);
     const venice = model.providers.venice;
-    const veniceThinking = venice && venice.thinking.join() !== thinking.join()
+    const veniceThinking = venice && (!openrouter || venice.thinking.join() !== openrouter.thinking.join())
       ? ` (${venice.thinking.length ? `thinking: ${venice.thinking.join(", ")}` : "no thinking control"})`
       : "";
-    assert.deepEqual(row.slice(4, 6), [`\`${model.providers.openrouter.id}\``, venice ? `\`${venice.id}\`${veniceThinking}` : "–"], name);
+    assert.deepEqual(row.slice(4, 6), [openrouter ? `\`${openrouter.id}\`` : "–", venice ? `\`${venice.id}\`${veniceThinking}` : "–"], name);
   }
   const kinds = tableRows(readme, "### Kinds");
   assert.deepEqual(
