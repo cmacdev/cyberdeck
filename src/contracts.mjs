@@ -1,6 +1,6 @@
 import { THINKING_LEVELS } from "./config.mjs";
 
-export const SERVER_INFO = Object.freeze({ name: "cyberdeck", version: "0.1.1" });
+export const SERVER_INFO = Object.freeze({ name: "cyberdeck", version: "0.2.0" });
 export const MODERN_PROTOCOL_VERSION = "2026-07-28";
 export const LEGACY_PROTOCOL_VERSIONS = Object.freeze([
   "2025-11-25",
@@ -12,68 +12,34 @@ export const PROFILE_RESOURCE_URI = "cyberdeck://profiles";
 export const CATALOG_RESOURCE_URI = "cyberdeck://catalog";
 
 export const MAX_PATH_CHARACTERS = 4096;
-export const MAX_MODEL_CHARACTERS = 200;
 export const MAX_CONSTRAINTS = 20;
 export const MAX_CONSTRAINT_CHARACTERS = 500;
 
-function roleLines(profile) {
-  return Object.entries(profile.roles).map(
-    ([name, role]) => `${name} (${role.model}): ${role.when}`,
+function modelLines(config) {
+  return Object.entries(config.models).map(
+    ([name, model]) =>
+      `${name} (${model.tier}, ${model.family}; ${model.thinking.join("|")}, default ${model.defaultThinking}): ${model.strengths}`,
   );
 }
 
+function kindLine(config) {
+  const kinds = Object.entries(config.kinds).map(([name, kind]) => `${name}→${kind.model}`);
+  return kinds.length ? `Optional kind presets set the default model and output: ${kinds.join(", ")}.` : "";
+}
+
 export function buildServerInstructions(config) {
-  const research = config.profiles.research;
-  const implementation = config.profiles.implementation;
   return [
     "Stay in the calling harness. Delegate through these two tools; do not spawn Pi yourself.",
-    `research is read-only. Default role ${research.defaultRole}. Roles: ${roleLines(research).join(" | ")}`,
-    `implement may write or run shell. Default role ${implementation.defaultRole}. Roles: ${roleLines(implementation).join(" | ")}`,
-    "Omit model to use the role default. Override model only when the task needs a listed provider model ID. Results are capped; read cyberdeck://catalog for the role table.",
-  ].join(" ");
+    "research is read-only; implement may write or run shell. Any model works with either tool.",
+    "Choose model by tier and strengths; start cheap and escalate to smart after a failure or for long-horizon work.",
+    kindLine(config),
+    "Omit thinking to use the model default. For reviews pass implemented_by so the reviewer is a different family. Results are capped; read cyberdeck://catalog for the full catalog.",
+  ]
+    .filter(Boolean)
+    .join(" ");
 }
 
-function allowedModels(profile) {
-  return [
-    ...new Set([
-      ...Object.values(profile.roles).map((role) => role.model),
-      ...profile.modelPatterns.filter((pattern) => !pattern.includes("*")),
-    ]),
-  ];
-}
-
-function modelProperty(profile) {
-  const hasWildcard = profile.modelPatterns.some((pattern) => pattern.includes("*"));
-  const listed = allowedModels(profile);
-  return {
-    type: "string",
-    minLength: 1,
-    maxLength: MAX_MODEL_CHARACTERS,
-    ...(hasWildcard || listed.length === 0 ? {} : { enum: listed }),
-    description:
-      "Optional provider model ID. Omit to use the selected role's model. Must match this profile's modelPatterns.",
-  };
-}
-
-function roleProperty(profile) {
-  return {
-    type: "string",
-    enum: Object.keys(profile.roles),
-    default: profile.defaultRole,
-    description: `Preset agent for this tool. ${roleLines(profile).join(" ")}`,
-  };
-}
-
-function thinkingProperty(profile) {
-  return {
-    type: "string",
-    enum: THINKING_LEVELS.slice(0, THINKING_LEVELS.indexOf(profile.maxThinking) + 1),
-    description: "Pi reasoning level, capped by the selected role. Omit to use the role default.",
-  };
-}
-
-function inputSchema(config, profileName) {
-  const profile = config.profiles[profileName];
+function inputSchema(config, modelDescription) {
   const limits = config.limits;
   return {
     $schema: "https://json-schema.org/draft/2020-12/schema",
@@ -93,9 +59,30 @@ function inputSchema(config, profileName) {
         maxLength: MAX_PATH_CHARACTERS,
         description: "Existing absolute directory inside a configured workspace root.",
       },
-      role: roleProperty(profile),
-      model: modelProperty(profile),
-      thinking: thinkingProperty(profile),
+      ...(Object.keys(config.kinds).length && {
+        kind: {
+          type: "string",
+          enum: Object.keys(config.kinds),
+          description: "Optional preset that sets the default model and output shape.",
+        },
+      }),
+      model: {
+        type: "string",
+        enum: Object.keys(config.models),
+        description: `Catalog model. Omit to use the kind's model, else ${config.defaultModel}. ${modelDescription}`,
+      },
+      thinking: {
+        type: "string",
+        enum: THINKING_LEVELS.filter((level) =>
+          Object.values(config.models).some((model) => model.thinking.includes(level)),
+        ),
+        description: "Pi reasoning level; must be one the model lists. Omit to use the model default.",
+      },
+      implemented_by: {
+        type: "string",
+        enum: [...new Set(Object.values(config.models).map((model) => model.family))],
+        description: "Family that produced the work under review; a model of that family is rejected.",
+      },
       context_files: {
         type: "array",
         maxItems: limits.maxContextFiles,
@@ -136,7 +123,7 @@ export const OUTPUT_SCHEMA = Object.freeze({
     "ok",
     "run_id",
     "profile",
-    "role",
+    "kind",
     "status",
     "model",
     "thinking",
@@ -153,7 +140,7 @@ export const OUTPUT_SCHEMA = Object.freeze({
     ok: { type: "boolean" },
     run_id: { type: ["string", "null"] },
     profile: { enum: ["research", "implementation"] },
-    role: { type: ["string", "null"] },
+    kind: { type: ["string", "null"] },
     status: {
       enum: ["succeeded", "failed", "timed_out", "cancelled", "output_limit", "rejected"],
     },
@@ -197,14 +184,12 @@ export const OUTPUT_SCHEMA = Object.freeze({
 });
 
 export function buildTools(config) {
-  const research = config.profiles.research;
-  const implementation = config.profiles.implementation;
   return [
     {
       name: "research",
       title: "Delegate read-only research",
-      description: `Read-only Pi agent. Cannot receive bash/edit/write. Pick a role or accept default ${research.defaultRole}. ${roleLines(research).join(" ")}`,
-      inputSchema: inputSchema(config, "research"),
+      description: "Read-only Pi agent. Cannot receive bash/edit/write. Choose model by tier and strengths.",
+      inputSchema: inputSchema(config, modelLines(config).join(" ")),
       outputSchema: OUTPUT_SCHEMA,
       annotations: {
         readOnlyHint: true,
@@ -216,8 +201,8 @@ export function buildTools(config) {
     {
       name: "implement",
       title: "Delegate implementation",
-      description: `Write/shell-capable Pi coding agent. Use only when workspace changes are authorized. Pick a role or accept default ${implementation.defaultRole}. ${roleLines(implementation).join(" ")}`,
-      inputSchema: inputSchema(config, "implementation"),
+      description: "Write/shell-capable Pi coding agent. Use only when workspace changes are authorized. Choose model by tier and strengths.",
+      inputSchema: inputSchema(config, "Same catalog as the research tool's model list."),
       outputSchema: OUTPUT_SCHEMA,
       annotations: {
         readOnlyHint: false,

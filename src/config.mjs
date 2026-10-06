@@ -16,7 +16,8 @@ const PROFILE_NAMES = ["research", "implementation"];
 const MUTATING_BUILT_INS = new Set(["bash", "edit", "write"]);
 const MAX_TIMEOUT_SECONDS = 86400;
 const TOOL_NAME = /^[A-Za-z0-9_.:-]+$/;
-const ROLE_NAME = /^[a-z][a-z0-9_]{0,31}$/;
+const NAME = /^[a-z][a-z0-9_-]{0,31}$/;
+const PROVIDERS = ["openrouter", "venice"];
 
 class ConfigurationError extends Error {
   constructor(message) {
@@ -117,69 +118,9 @@ async function canonicalDirectory(value, configDirectory, label) {
   return canonical;
 }
 
-function parseRole(raw, label, profileCeiling) {
-  const role = expectObject(raw, label);
-  expectKnownKeys(
-    role,
-    label,
-    new Set(["model", "when", "defaultThinking", "maxThinking", "promptPreamble"]),
-  );
-  const model = expectString(role.model, `${label}.model`).trim();
-  if (model.length > 200) fail(`${label}.model cannot exceed 200 characters.`);
-  const when = expectString(role.when, `${label}.when`);
-  if (when.length > 240) fail(`${label}.when cannot exceed 240 characters.`);
-  const defaultThinking = expectThinking(
-    role.defaultThinking ?? profileCeiling.defaultThinking,
-    `${label}.defaultThinking`,
-  );
-  const maxThinking = expectThinking(
-    role.maxThinking ?? profileCeiling.maxThinking,
-    `${label}.maxThinking`,
-  );
-  if (THINKING_LEVELS.indexOf(defaultThinking) > THINKING_LEVELS.indexOf(maxThinking)) {
-    fail(`${label}.defaultThinking cannot exceed maxThinking.`);
-  }
-  if (THINKING_LEVELS.indexOf(maxThinking) > THINKING_LEVELS.indexOf(profileCeiling.maxThinking)) {
-    fail(`${label}.maxThinking cannot exceed the profile maximum ${profileCeiling.maxThinking}.`);
-  }
-  const promptPreamble =
-    role.promptPreamble === undefined
-      ? profileCeiling.promptPreamble
-      : expectString(role.promptPreamble, `${label}.promptPreamble`, { allowEmpty: true });
-  if (promptPreamble.length > 4000) {
-    fail(`${label}.promptPreamble cannot exceed 4000 characters.`);
-  }
-  return { model, when, defaultThinking, maxThinking, promptPreamble };
-}
-
 function parseProfile(raw, name) {
   const profile = expectObject(raw, `profiles.${name}`);
-  expectKnownKeys(
-    profile,
-    `profiles.${name}`,
-    new Set([
-      "modelPatterns",
-      "defaultRole",
-      "defaultThinking",
-      "maxThinking",
-      "tools",
-      "promptPreamble",
-      "roles",
-    ]),
-  );
-  const modelPatterns = expectStringArray(
-    profile.modelPatterns,
-    `profiles.${name}.modelPatterns`,
-    { maxItems: 32, maxItemLength: 200 },
-  );
-  const defaultThinking = expectThinking(
-    profile.defaultThinking,
-    `profiles.${name}.defaultThinking`,
-  );
-  const maxThinking = expectThinking(profile.maxThinking, `profiles.${name}.maxThinking`);
-  if (THINKING_LEVELS.indexOf(defaultThinking) > THINKING_LEVELS.indexOf(maxThinking)) {
-    fail(`profiles.${name}.defaultThinking cannot exceed maxThinking.`);
-  }
+  expectKnownKeys(profile, `profiles.${name}`, new Set(["tools", "promptPreamble"]));
   const tools = expectStringArray(profile.tools, `profiles.${name}.tools`, {
     pattern: TOOL_NAME,
     maxItems: 64,
@@ -199,41 +140,36 @@ function parseProfile(raw, name) {
   if (promptPreamble.length > 4000) {
     fail(`profiles.${name}.promptPreamble cannot exceed 4000 characters.`);
   }
+  return { tools, promptPreamble };
+}
 
-  const rolesRaw = expectObject(profile.roles, `profiles.${name}.roles`);
-  const roleNames = Object.keys(rolesRaw);
-  if (roleNames.length === 0) fail(`profiles.${name}.roles must define at least one role.`);
-  if (roleNames.length > 16) fail(`profiles.${name}.roles cannot contain more than 16 roles.`);
-  const roles = {};
-  for (const roleName of roleNames) {
-    if (!ROLE_NAME.test(roleName)) {
-      fail(`profiles.${name}.roles has an invalid role name: ${roleName}.`);
+function parseModel(raw, label, provider) {
+  const model = expectObject(raw, label);
+  expectKnownKeys(model, label, new Set(["family", "tier", "strengths", "defaultThinking", "providers"]));
+  const family = expectString(model.family, `${label}.family`);
+  if (!NAME.test(family)) fail(`${label}.family has an invalid value.`);
+  if (!["cheap", "smart"].includes(model.tier)) fail(`${label}.tier must be "cheap" or "smart".`);
+  const strengths = expectString(model.strengths, `${label}.strengths`);
+  if (strengths.length > 160) fail(`${label}.strengths cannot exceed 160 characters.`);
+  const defaultThinking = expectThinking(model.defaultThinking, `${label}.defaultThinking`);
+  const providers = expectObject(model.providers, `${label}.providers`);
+  expectKnownKeys(providers, `${label}.providers`, new Set(PROVIDERS));
+  if (Object.keys(providers).length === 0) fail(`${label}.providers must list at least one provider.`);
+  let resolved = null;
+  for (const [name, entryRaw] of Object.entries(providers)) {
+    const entryLabel = `${label}.providers.${name}`;
+    const entry = expectObject(entryRaw, entryLabel);
+    expectKnownKeys(entry, entryLabel, new Set(["id", "thinking"]));
+    const id = expectString(entry.id, `${entryLabel}.id`);
+    if (id.length > 200) fail(`${entryLabel}.id cannot exceed 200 characters.`);
+    const thinking = expectStringArray(entry.thinking, `${entryLabel}.thinking`);
+    thinking.forEach((level, index) => expectThinking(level, `${entryLabel}.thinking[${index}]`));
+    if (!thinking.includes(defaultThinking)) {
+      fail(`${label}.defaultThinking must be in ${entryLabel}.thinking.`);
     }
-    const role = parseRole(rolesRaw[roleName], `profiles.${name}.roles.${roleName}`, {
-      defaultThinking,
-      maxThinking,
-      promptPreamble,
-    });
-    if (!matchesModelPattern(role.model, modelPatterns)) {
-      fail(
-        `profiles.${name}.roles.${roleName}.model ${JSON.stringify(role.model)} is not allowed by modelPatterns.`,
-      );
-    }
-    roles[roleName] = role;
+    if (name === provider) resolved = { id, thinking };
   }
-  const defaultRole = expectString(profile.defaultRole, `profiles.${name}.defaultRole`);
-  if (!roles[defaultRole]) {
-    fail(`profiles.${name}.defaultRole ${JSON.stringify(defaultRole)} is not a defined role.`);
-  }
-  return {
-    modelPatterns,
-    defaultRole,
-    defaultThinking,
-    maxThinking,
-    tools,
-    promptPreamble,
-    roles,
-  };
+  return resolved && { family, tier: model.tier, strengths, defaultThinking, ...resolved };
 }
 
 export async function loadConfig(configPath) {
@@ -252,7 +188,9 @@ export async function loadConfig(configPath) {
     new Set([
       "$schema",
       "provider",
-      "modelAliases",
+      "defaultModel",
+      "models",
+      "kinds",
       "workspaceRoots",
       "artifactDirectory",
       "pi",
@@ -260,17 +198,29 @@ export async function loadConfig(configPath) {
       "profiles",
     ]),
   );
-  if (!["openrouter", "venice"].includes(raw.provider)) {
+  if (!PROVIDERS.includes(raw.provider)) {
     fail('provider must be "openrouter" or "venice".');
   }
-  const modelAliases = expectObject(raw.modelAliases ?? {}, "modelAliases");
-  expectKnownKeys(modelAliases, "modelAliases", new Set(["openrouter", "venice"]));
-  for (const [provider, aliases] of Object.entries(modelAliases)) {
-    expectObject(aliases, `modelAliases.${provider}`);
-    for (const [model, target] of Object.entries(aliases)) {
-      expectString(target, `modelAliases.${provider}.${model}`);
-      if (!model || model.length > 200 || target.length > 200) fail("modelAliases IDs must contain 1 to 200 characters.");
-    }
+  const models = {};
+  for (const [key, model] of Object.entries(expectObject(raw.models, "models"))) {
+    if (!NAME.test(key)) fail(`models has an invalid model name: ${key}.`);
+    const resolved = parseModel(model, `models.${key}`, raw.provider);
+    if (resolved) models[key] = resolved;
+  }
+  const available = (value, label) => {
+    expectString(value, label);
+    if (!Object.hasOwn(models, value)) fail(`${label} ${JSON.stringify(value)} is not a model available on ${raw.provider}.`);
+    return value;
+  };
+  const defaultModel = available(raw.defaultModel, "defaultModel");
+  const kinds = {};
+  for (const [name, kindRaw] of Object.entries(expectObject(raw.kinds ?? {}, "kinds"))) {
+    if (!NAME.test(name)) fail(`kinds has an invalid kind name: ${name}.`);
+    const kind = expectObject(kindRaw, `kinds.${name}`);
+    expectKnownKeys(kind, `kinds.${name}`, new Set(["model", "preamble"]));
+    const preamble = expectString(kind.preamble, `kinds.${name}.preamble`);
+    if (preamble.length > 1000) fail(`kinds.${name}.preamble cannot exceed 1000 characters.`);
+    kinds[name] = { model: available(kind.model, `kinds.${name}.model`), preamble };
   }
   const configDirectory = path.dirname(absoluteConfigPath);
   const workspaceRootValues = expectStringArray(raw.workspaceRoots, "workspaceRoots", {
@@ -388,19 +338,16 @@ export async function loadConfig(configPath) {
   const profilesRaw = expectObject(raw.profiles, "profiles");
   expectKnownKeys(profilesRaw, "profiles", new Set(PROFILE_NAMES));
   const profiles = Object.fromEntries(
-    PROFILE_NAMES.map((name) => {
-      const profile = parseProfile(profilesRaw[name], name);
-      const aliases = modelAliases[raw.provider] ?? {};
-      profile.modelPatterns = profile.modelPatterns.map((model) => aliases[model] ?? model);
-      for (const role of Object.values(profile.roles)) role.model = aliases[role.model] ?? role.model;
-      return [name, profile];
-    }),
+    PROFILE_NAMES.map((name) => [name, parseProfile(profilesRaw[name], name)]),
   );
 
   return {
     configPath: absoluteConfigPath,
     configDirectory,
     provider: raw.provider,
+    defaultModel,
+    models,
+    kinds,
     workspaceRoots: [...new Set(workspaceRoots)],
     artifactDirectory: resolvePath(
       raw.artifactDirectory,
@@ -413,14 +360,10 @@ export async function loadConfig(configPath) {
   };
 }
 
-export function matchesModelPattern(model, patterns) {
-  return patterns.some((pattern) => {
-    const escaped = pattern
-      .split("*")
-      .map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
-      .join(".*");
-    return new RegExp(`^${escaped}$`).test(model);
-  });
+export function pinnedThinkingMap(levels) {
+  return Object.fromEntries(
+    THINKING_LEVELS.map((level) => [level, levels.includes(level) ? (level === "off" ? "none" : level) : null]),
+  );
 }
 
 export function isWithinRoot(candidate, root) {
@@ -432,16 +375,7 @@ export function isWithinRoot(candidate, root) {
 }
 
 function publicProfile(profile, permission) {
-  return {
-    permission,
-    defaultRole: profile.defaultRole,
-    modelPatterns: profile.modelPatterns,
-    defaultThinking: profile.defaultThinking,
-    maxThinking: profile.maxThinking,
-    tools: profile.tools,
-    promptPreamble: profile.promptPreamble,
-    roles: profile.roles,
-  };
+  return { permission, tools: profile.tools, promptPreamble: profile.promptPreamble };
 }
 
 export function publicConfiguration(config) {
@@ -471,26 +405,5 @@ export function publicConfiguration(config) {
 }
 
 export function publicCatalog(config) {
-  const catalog = {};
-  for (const [profileName, profile] of Object.entries(config.profiles)) {
-    catalog[profileName] = {
-      tool: profileName === "implementation" ? "implement" : "research",
-      permission:
-        profileName === "research" ? "read-only tool policy" : "write/shell-capable tool policy",
-      defaultRole: profile.defaultRole,
-      tools: profile.tools,
-      roles: Object.fromEntries(
-        Object.entries(profile.roles).map(([name, role]) => [
-          name,
-          {
-            model: role.model,
-            when: role.when,
-            defaultThinking: role.defaultThinking,
-            maxThinking: role.maxThinking,
-          },
-        ]),
-      ),
-    };
-  }
-  return catalog;
+  return { defaultModel: config.defaultModel, models: config.models, kinds: config.kinds };
 }

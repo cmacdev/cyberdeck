@@ -1,4 +1,10 @@
+import { readFileSync } from "node:fs";
+
 export const inferenceKey = "test-inference-secret-123456";
+const veniceModels = Object.values(
+  JSON.parse(readFileSync(new URL("../cyberdeck.config.json", import.meta.url), "utf8")).models,
+).flatMap((model) => model.providers.venice ?? []);
+export const veniceModelIds = veniceModels.map((model) => model.id);
 
 export function veniceFixture({ privacy = "PRIVATE_ONLY", modelPrivacy = "private", errorFormat = "message", failPath } = {}) {
   const calls = [];
@@ -9,12 +15,12 @@ export function veniceFixture({ privacy = "PRIVATE_ONLY", modelPrivacy = "privat
     if (path === failPath) return { ok: false, status: 403, json: async () => ({ code: "UNAUTHORIZED" }) };
     let data;
     if (path === "/models") {
-      data = ["deepseek-v4-flash-0731", "kimi-k3", "grok-4-7"].map((id) => ({
+      data = veniceModels.map(({ id, thinking }) => ({
         id, type: "text",
         model_spec: {
           name: id, privacy: modelPrivacy, offline: false,
           availableContextTokens: 1000000, maxCompletionTokens: 32768,
-          capabilities: { supportsFunctionCalling: true, supportsReasoning: true, supportsReasoningEffort: true, reasoningEffortOptions: ["none", "low", "high", "max"], supportsVision: false },
+          capabilities: { supportsFunctionCalling: true, supportsReasoning: true, supportsReasoningEffort: true, reasoningEffortOptions: thinking.map((level) => (level === "off" ? "none" : level)), supportsVision: false },
           pricing: { input: { usd: 1 }, output: { usd: 2 } },
         },
       }));

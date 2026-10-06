@@ -53,7 +53,7 @@ test("worker identity survives reload and changes for other sessions and forks",
 
 test("worker launch reuses profile policy and preserves sessions without enabling coordinator recursion", async (t) => {
   const { manager, calls, config } = await setup(t);
-  await manager.run({ action: "start", name: "scout", role: "verify" });
+  await manager.run({ action: "start", name: "scout", kind: "review" });
   const created = calls.find(({ args }) => args[1] === "create").args;
   assert.ok(created.includes("CYBERDECK_WORKER=1"));
   assert.ok(created.includes(`PI_CODING_AGENT_DIR=${config.pi.stateDirectory}`));
@@ -64,23 +64,24 @@ test("worker launch reuses profile policy and preserves sessions without enablin
   assert.ok(!args.includes("--no-session"));
   await assert.rejects(manager.run({ action: "start", name: "scout" }), /already exists/);
   await assert.rejects(manager.run({ action: "start", name: "outside", working_directory: "/" }), /workspaceRoots/);
-  await assert.rejects(manager.run({ action: "start", name: "bad", model: "wrong/model" }), /not allowed/);
+  await assert.rejects(manager.run({ action: "start", name: "bad", model: "wrong/model" }), /not a model available/);
+  await assert.rejects(manager.run({ action: "start", name: "same", kind: "review", implemented_by: "gamma" }), /gamma family that implemented the work/);
 });
 
-test("each worker role selects its configured model and thinking while preserving explicit overrides", async (t) => {
+test("each worker model selects its configured thinking while preserving explicit overrides", async (t) => {
   const { manager, calls, config } = await setup(t);
   for (const [profile, policy] of Object.entries(config.profiles)) {
-    for (const [role, defaults] of Object.entries(policy.roles)) {
-      await manager.run({ action: "start", name: role, profile, role });
+    for (const [name, model] of Object.entries(config.models)) {
+      await manager.run({ action: "start", name: `${profile.slice(0, 4)}-${name}`, profile, model: name });
       const args = calls.filter(({ args }) => args[1] === "start").at(-1).args;
-      assert.equal(args[args.indexOf("--model") + 1], defaults.model);
-      assert.equal(args[args.indexOf("--thinking") + 1], defaults.defaultThinking);
+      assert.equal(args[args.indexOf("--model") + 1], model.id);
+      assert.equal(args[args.indexOf("--thinking") + 1], model.defaultThinking);
       assert.equal(args[args.indexOf("--tools") + 1], policy.tools.join(","));
     }
   }
-  await manager.run({ action: "start", name: "explicit", profile: "research", role: "mechanical", model: "research/model-c", thinking: "low" });
+  await manager.run({ action: "start", name: "explicit", profile: "research", kind: "review", model: "model-a", thinking: "low" });
   const args = calls.filter(({ args }) => args[1] === "start").at(-1).args;
-  assert.equal(args[args.indexOf("--model") + 1], "research/model-c");
+  assert.equal(args[args.indexOf("--model") + 1], "research/model-a");
   assert.equal(args[args.indexOf("--thinking") + 1], "low");
 });
 
@@ -246,10 +247,9 @@ test("coordinator injects guidance on every turn, reconnects on resume and suppo
   const first = events.get("before_agent_start")({ systemPrompt: "Original" }, ctx).systemPrompt;
   assert.ok(first.startsWith("Original"));
   assert.match(first, /workers tool/);
-  const catalog = JSON.parse(first.split("Configured roles: ")[1]);
-  assert.equal(catalog.research.roles.verify.model, "research/model-c");
-  assert.equal(catalog.implementation.roles.intellectual.model, "implementation/model-b");
-  assert.equal(catalog.research.tool, undefined);
+  const catalog = JSON.parse(first.split("Configured catalog: ")[1]);
+  assert.equal(catalog.models["model-c"].id, "research/model-c");
+  assert.equal(catalog.kinds.review.model, "model-c");
   assert.equal(events.get("before_agent_start")({ systemPrompt: "Original" }, ctx).systemPrompt, first);
   await events.get("session_start")({ reason: "resume" }, ctx);
   assert.equal(managers[0].session, managers[1].session);

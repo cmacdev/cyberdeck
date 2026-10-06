@@ -68,21 +68,24 @@ test("every installer stop has an install-helper.md fix and every documented sto
   }
 });
 
-test("the README role table mirrors the shipped configuration", async () => {
-  const rows = tableRows(await read("README.md"), "## Tools and roles");
+test("the README model and kind tables mirror the shipped configuration", async () => {
+  const readme = await read("README.md");
   const shipped = JSON.parse(await read("cyberdeck.config.json"));
-  let expectedRows = 0;
-  for (const [profileName, profile] of Object.entries(shipped.profiles)) {
-    const tool = profileName === "implementation" ? "implement" : "research";
-    for (const [roleName, role] of Object.entries(profile.roles)) {
-      expectedRows += 1;
-      const row = rows.find((cells) => cells[0] === `\`${tool}\`` && cells[1].startsWith(`\`${roleName}\``));
-      assert.ok(row, `README lacks a row for ${tool} ${roleName}`);
-      assert.equal(row[2], `\`${role.model}\``, `${tool} ${roleName} model`);
-      assert.equal(row[1].includes("(default)"), roleName === profile.defaultRole, `${tool} ${roleName} default marker`);
-    }
+  const rows = tableRows(readme, "## Tools and models");
+  assert.deepEqual(rows.map((row) => row[0]), Object.keys(shipped.models).map((name) => `\`${name}\``));
+  for (const [name, model] of Object.entries(shipped.models)) {
+    const row = rows.find((cells) => cells[0] === `\`${name}\``);
+    const thinking = model.providers.openrouter.thinking;
+    assert.deepEqual(row.slice(1, 3), [model.tier, model.family], name);
+    assert.equal(row[3], thinking.map((level) => (level === model.defaultThinking ? `**${level}**` : level)).join(", ") || "none", name);
+    const id = (provider) => (model.providers[provider] ? `\`${model.providers[provider].id}\`` : "–");
+    assert.deepEqual(row.slice(4, 6), [id("openrouter"), id("venice")], name);
   }
-  assert.equal(rows.length, expectedRows);
+  const kinds = tableRows(readme, "### Kinds");
+  assert.deepEqual(
+    kinds.map((row) => row.slice(0, 3)),
+    Object.entries(shipped.kinds).map(([name, kind]) => [`\`${name}\``, `\`${kind.model}\``, kind.preamble]),
+  );
 });
 
 test("the installer installs the latest Pi and does not pin a version", async () => {
@@ -103,13 +106,11 @@ test("the installer installs the latest Pi and does not pin a version", async ()
   assert.equal(helper.includes("tested version"), false);
 });
 
-test("the deck skill names exactly the shipped roles", async () => {
+test("the deck skill names exactly the shipped kinds", async () => {
   const skill = await read("skills/deck/SKILL.md");
   const shipped = JSON.parse(await read("cyberdeck.config.json"));
-  for (const profile of Object.values(shipped.profiles)) {
-    for (const role of Object.keys(profile.roles)) {
-      assert.ok(skill.includes(`\`${role}\``), `SKILL.md does not mention role ${role}`);
-    }
+  for (const name of Object.keys(shipped.kinds)) {
+    assert.ok(skill.includes(`\`${name}\``), `SKILL.md does not mention ${name}`);
   }
 });
 

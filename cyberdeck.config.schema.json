@@ -2,11 +2,13 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://local.invalid/cyberdeck.config.schema.json",
   "title": "Cyberdeck MCP configuration",
-  "description": "Policy for the cyberdeck MCP server: roles, models, Pi tool allowlists, roots, and limits.",
+  "description": "Policy for the cyberdeck MCP server: model catalog, kind presets, Pi tool allowlists, roots, and limits.",
   "type": "object",
   "additionalProperties": false,
   "required": [
     "provider",
+    "defaultModel",
+    "models",
     "workspaceRoots",
     "artifactDirectory",
     "pi",
@@ -21,13 +23,29 @@
       "enum": ["openrouter", "venice"],
       "description": "Pi provider name."
     },
-    "modelAliases": {
+    "defaultModel": {
+      "type": "string",
+      "description": "Model key used when the caller sets neither model nor kind."
+    },
+    "models": {
       "type": "object",
-      "additionalProperties": false,
-      "description": "Optional exact model ID translations applied to roles and modelPatterns for the selected provider.",
-      "properties": {
-        "openrouter": { "$ref": "#/$defs/modelAliases" },
-        "venice": { "$ref": "#/$defs/modelAliases" }
+      "minProperties": 1,
+      "description": "Model catalog keyed by the provider-neutral name callers pass as model.",
+      "additionalProperties": {
+        "$ref": "#/$defs/model"
+      },
+      "propertyNames": {
+        "pattern": "^[a-z][a-z0-9_-]{0,31}$"
+      }
+    },
+    "kinds": {
+      "type": "object",
+      "description": "Optional presets callers may pass as kind.",
+      "additionalProperties": {
+        "$ref": "#/$defs/kind"
+      },
+      "propertyNames": {
+        "pattern": "^[a-z][a-z0-9_-]{0,31}$"
       }
     },
     "workspaceRoots": {
@@ -98,7 +116,7 @@
     "profiles": {
       "type": "object",
       "additionalProperties": false,
-      "description": "The two permission profiles behind the research and implement tools.",
+      "description": "Access policy behind the research and implement tools.",
       "required": [
         "research",
         "implementation"
@@ -116,10 +134,6 @@
     }
   },
   "$defs": {
-    "modelAliases": {
-      "type": "object",
-      "additionalProperties": { "type": "string", "minLength": 1, "maxLength": 200 }
-    },
     "thinking": {
       "enum": [
         "off",
@@ -132,39 +146,96 @@
       ],
       "description": "Pi reasoning level."
     },
-    "role": {
+    "model": {
       "type": "object",
       "additionalProperties": false,
-      "description": "A preset agent the caller selects by name.",
+      "required": [
+        "family",
+        "tier",
+        "strengths",
+        "defaultThinking",
+        "providers"
+      ],
+      "properties": {
+        "family": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]{0,31}$",
+          "description": "Model family; implemented_by rejects a reviewer of the same family."
+        },
+        "tier": {
+          "enum": [
+            "cheap",
+            "smart"
+          ]
+        },
+        "strengths": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160,
+          "description": "One line the calling agent sees when choosing."
+        },
+        "defaultThinking": {
+          "$ref": "#/$defs/thinking",
+          "description": "Used when the caller omits thinking; must be in every provider's thinking list."
+        },
+        "providers": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "openrouter": {
+              "$ref": "#/$defs/providerModel"
+            },
+            "venice": {
+              "$ref": "#/$defs/providerModel"
+            }
+          },
+          "description": "Providers that serve this model; others omit it.",
+          "minProperties": 1
+        }
+      }
+    },
+    "providerModel": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "thinking"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "description": "Provider model ID passed to Pi."
+        },
+        "thinking": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/thinking"
+          },
+          "description": "Levels this provider accepts for the model; the installer pins Pi to exactly these."
+        }
+      }
+    },
+    "kind": {
+      "type": "object",
+      "additionalProperties": false,
       "required": [
         "model",
-        "when"
+        "preamble"
       ],
       "properties": {
         "model": {
           "type": "string",
-          "minLength": 1,
-          "maxLength": 200,
-          "description": "Model ID; must match the profile's modelPatterns before provider alias translation."
+          "description": "Default model key for this kind."
         },
-        "when": {
+        "preamble": {
           "type": "string",
           "minLength": 1,
-          "maxLength": 240,
-          "description": "One line the calling agent sees: when to pick this role."
-        },
-        "defaultThinking": {
-          "$ref": "#/$defs/thinking",
-          "description": "Used when the caller omits thinking. Defaults to the profile value."
-        },
-        "maxThinking": {
-          "$ref": "#/$defs/thinking",
-          "description": "Ceiling for this role; may not exceed the profile's maxThinking."
-        },
-        "promptPreamble": {
-          "type": "string",
-          "maxLength": 4000,
-          "description": "Overrides the profile promptPreamble for this role."
+          "maxLength": 1000,
+          "description": "Appended after the profile preamble; states the expected output."
         }
       }
     },
@@ -172,42 +243,10 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "modelPatterns",
-        "defaultRole",
-        "defaultThinking",
-        "maxThinking",
         "tools",
-        "promptPreamble",
-        "roles"
+        "promptPreamble"
       ],
       "properties": {
-        "modelPatterns": {
-          "type": "array",
-          "minItems": 1,
-          "maxItems": 32,
-          "uniqueItems": true,
-          "description": "Allowlist for role models and caller model overrides; * is a wildcard.",
-          "items": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 200
-          }
-        },
-        "defaultRole": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 32,
-          "pattern": "^[a-z][a-z0-9_]{0,31}$",
-          "description": "Role used when the caller omits role."
-        },
-        "defaultThinking": {
-          "$ref": "#/$defs/thinking",
-          "description": "Fallback defaultThinking for roles that do not set one."
-        },
-        "maxThinking": {
-          "$ref": "#/$defs/thinking",
-          "description": "Ceiling for every role in this profile."
-        },
         "tools": {
           "type": "array",
           "minItems": 1,
@@ -223,19 +262,7 @@
         "promptPreamble": {
           "type": "string",
           "maxLength": 4000,
-          "description": "Appended to Pi's system prompt for every role unless the role overrides it."
-        },
-        "roles": {
-          "type": "object",
-          "minProperties": 1,
-          "maxProperties": 16,
-          "description": "Named roles; keys are lowercase identifiers.",
-          "additionalProperties": {
-            "$ref": "#/$defs/role"
-          },
-          "propertyNames": {
-            "pattern": "^[a-z][a-z0-9_]{0,31}$"
-          }
+          "description": "Appended to Pi's system prompt for every call to this tool."
         }
       }
     },

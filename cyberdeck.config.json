@@ -1,11 +1,145 @@
 {
   "$schema": "./cyberdeck.config.schema.json",
   "provider": "openrouter",
-  "modelAliases": {
-    "venice": {
-      "deepseek/deepseek-v4-flash-0731": "deepseek-v4-flash-0731",
-      "moonshotai/kimi-k3": "kimi-k3",
-      "x-ai/grok-4.7": "grok-4-7"
+  "defaultModel": "deepseek-flash",
+  "models": {
+    "deepseek-flash": {
+      "family": "deepseek",
+      "tier": "cheap",
+      "strengths": "Bulk reading, long-context recall, tests, docs.",
+      "defaultThinking": "max",
+      "providers": {
+        "openrouter": {
+          "id": "deepseek/deepseek-v4-flash-0731",
+          "thinking": ["low", "high", "max"]
+        },
+        "venice": {
+          "id": "deepseek-v4-flash-0731",
+          "thinking": ["low", "high", "max"]
+        }
+      }
+    },
+    "deepseek-flash-4-1": {
+      "family": "deepseek",
+      "tier": "cheap",
+      "strengths": "Planning, debugging, security review; fast.",
+      "defaultThinking": "max",
+      "providers": {
+        "openrouter": {
+          "id": "deepseek/deepseek-v4.1-flash",
+          "thinking": ["off", "low", "high", "max"]
+        },
+        "venice": {
+          "id": "deepseek-v4-1-flash",
+          "thinking": ["off", "low", "high", "max"]
+        }
+      }
+    },
+    "glm-flash": {
+      "family": "glm",
+      "tier": "cheap",
+      "strengths": "Implementation and tool loops; cheapest strong coder.",
+      "defaultThinking": "max",
+      "providers": {
+        "openrouter": {
+          "id": "z-ai/glm-5.3-flash",
+          "thinking": ["low", "high", "max"]
+        },
+        "venice": {
+          "id": "z-ai-glm-5-3-flash",
+          "thinking": ["low", "high", "max"]
+        }
+      }
+    },
+    "mimo-flash": {
+      "family": "mimo",
+      "tier": "cheap",
+      "strengths": "Tool calling; cross-family reviewer; weak on security.",
+      "defaultThinking": "high",
+      "providers": {
+        "openrouter": {
+          "id": "xiaomi/mimo-v2.6-flash",
+          "thinking": ["off", "minimal", "low", "medium", "high"]
+        }
+      }
+    },
+    "deepseek-pro": {
+      "family": "deepseek",
+      "tier": "smart",
+      "strengths": "Smart reader for very large context.",
+      "defaultThinking": "high",
+      "providers": {
+        "openrouter": {
+          "id": "deepseek/deepseek-v4-pro-0813",
+          "thinking": ["low", "high", "max"]
+        },
+        "venice": {
+          "id": "deepseek-v4-pro-0813",
+          "thinking": ["low", "high", "max"]
+        }
+      }
+    },
+    "grok-4-7": {
+      "family": "grok",
+      "tier": "smart",
+      "strengths": "Default smart worker; price doubles over 200K context.",
+      "defaultThinking": "high",
+      "providers": {
+        "openrouter": {
+          "id": "x-ai/grok-4.7",
+          "thinking": ["low", "medium", "high", "xhigh"]
+        },
+        "venice": {
+          "id": "grok-4-7",
+          "thinking": ["low", "medium", "high", "xhigh"]
+        }
+      }
+    },
+    "kimi-k3": {
+      "family": "kimi",
+      "tier": "smart",
+      "strengths": "Long-horizon autonomy and hard reviews; very verbose, priciest.",
+      "defaultThinking": "high",
+      "providers": {
+        "openrouter": {
+          "id": "moonshotai/kimi-k3",
+          "thinking": ["low", "high", "max"]
+        },
+        "venice": {
+          "id": "kimi-k3",
+          "thinking": ["low", "high", "max"]
+        }
+      }
+    }
+  },
+  "kinds": {
+    "survey": {
+      "model": "deepseek-flash",
+      "preamble": "Report findings with file:line citations, separating facts, inferences, and unknowns."
+    },
+    "plan": {
+      "model": "deepseek-flash-4-1",
+      "preamble": "Return a plan: ordered steps, files touched, acceptance checks, and risks."
+    },
+    "implement": {
+      "model": "glm-flash",
+      "preamble": "Report changed files, checks run with results, and open issues."
+    },
+    "test": {
+      "model": "deepseek-flash",
+      "preamble": "Report tests added, what each covers, and their results."
+    },
+    "review": {
+      "model": "grok-4-7",
+      "preamble": "Return findings ranked by severity, each with location, defect, evidence, and fix."
+    },
+    "debug": {
+      "model": "deepseek-flash-4-1",
+      "preamble": "Report the root cause, evidence, fix, and how it was verified."
+    },
+    "docs": {
+      "model": "deepseek-flash",
+      "preamble": "Return only the requested text."
     }
   },
   "workspaceRoots": [
@@ -31,50 +165,15 @@
   },
   "profiles": {
     "research": {
-      "modelPatterns": [
-        "deepseek/deepseek-v4-flash-0731",
-        "moonshotai/kimi-k3",
-        "x-ai/grok-4.7"
-      ],
-      "defaultRole": "mechanical",
-      "defaultThinking": "high",
-      "maxThinking": "max",
       "tools": [
         "read",
         "grep",
         "find",
         "ls"
       ],
-      "promptPreamble": "Investigate and report evidence. Do not modify files or external state. Clearly separate facts, inferences, and unknowns.",
-      "roles": {
-        "mechanical": {
-          "model": "deepseek/deepseek-v4-flash-0731",
-          "when": "Cheap read-only survey, inventory, grep, and citation.",
-          "defaultThinking": "medium",
-          "maxThinking": "high"
-        },
-        "verify": {
-          "model": "moonshotai/kimi-k3",
-          "when": "Judgment-bearing check; use a different model family from the implementer.",
-          "defaultThinking": "high",
-          "maxThinking": "max"
-        },
-        "adversarial": {
-          "model": "x-ai/grok-4.7",
-          "when": "Attack a plan, find holes, or run a hostile review.",
-          "defaultThinking": "high",
-          "maxThinking": "max"
-        }
-      }
+      "promptPreamble": "Investigate and report evidence. Do not modify files or external state. Clearly separate facts, inferences, and unknowns."
     },
     "implementation": {
-      "modelPatterns": [
-        "moonshotai/kimi-k3",
-        "x-ai/grok-4.7"
-      ],
-      "defaultRole": "intellectual",
-      "defaultThinking": "high",
-      "maxThinking": "max",
       "tools": [
         "read",
         "grep",
@@ -84,21 +183,7 @@
         "edit",
         "write"
       ],
-      "promptPreamble": "Implement only the requested change inside the supplied workspace. Preserve unrelated work, verify proportionately, and report changed files and checks.",
-      "roles": {
-        "gritty": {
-          "model": "moonshotai/kimi-k3",
-          "when": "Ambiguous or cross-cutting work; thorough, states assumptions.",
-          "defaultThinking": "high",
-          "maxThinking": "max"
-        },
-        "intellectual": {
-          "model": "x-ai/grok-4.7",
-          "when": "Bounded, spec-exact, reviewable diffs; do not expand scope.",
-          "defaultThinking": "high",
-          "maxThinking": "max"
-        }
-      }
+      "promptPreamble": "Implement only the requested change inside the supplied workspace. Preserve unrelated work, verify proportionately, and report changed files and checks."
     }
   }
 }
