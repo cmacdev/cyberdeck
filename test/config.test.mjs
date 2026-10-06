@@ -50,7 +50,16 @@ test("Venice resolves catalog models to Venice IDs and drops models it does not 
   assert.equal(report.catalog.models["model-a"].id, "model-a");
   assert.deepEqual(report.tools.map((tool) => tool.name), ["research", "implement"]);
   assert.deepEqual(report.tools[0].inputSchema.properties.model.enum, ["model-a", "model-c"]);
-  assert.deepEqual(report.tools[0].inputSchema.properties.thinking.enum, ["low", "medium", "high"]);
+  assert.deepEqual(report.tools[0].inputSchema.properties.thinking.enum, ["low", "medium"]);
+  assert.equal(report.catalog.models["model-c"].defaultThinking, null);
+  const uncontrolled = makeConfig(fixture, { provider: "venice" });
+  uncontrolled.models["model-a"].providers.venice.thinking = [];
+  delete uncontrolled.models["model-c"].providers.openrouter;
+  delete uncontrolled.models["model-c"].defaultThinking;
+  const bare = await inspect(await fixture.writeConfig("uncontrolled", uncontrolled));
+  assert.equal(bare.code, 0, bare.stderr);
+  assert.equal(JSON.parse(bare.stdout).tools[0].inputSchema.properties.thinking, undefined, "no empty thinking enum");
+  assert.match(report.tools[0].inputSchema.properties.model.description, /model-c \(smart, gamma; provider-set thinking\)/);
 });
 
 test("invalid configurations refuse to start with a precise message", async (t) => {

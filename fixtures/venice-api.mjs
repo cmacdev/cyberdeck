@@ -20,7 +20,7 @@ export function veniceFixture({ privacy = "PRIVATE_ONLY", modelPrivacy = "privat
         model_spec: {
           name: id, privacy: modelPrivacy, offline: false,
           availableContextTokens: 1000000, maxCompletionTokens: 32768,
-          capabilities: { supportsFunctionCalling: true, supportsReasoning: true, supportsReasoningEffort: true, reasoningEffortOptions: thinking.map((level) => (level === "off" ? "none" : level)), supportsVision: false },
+          capabilities: { supportsFunctionCalling: true, supportsReasoning: true, supportsReasoningEffort: thinking.length > 0, ...(thinking.length ? { reasoningEffortOptions: thinking.map((level) => (level === "off" ? "none" : level)) } : {}), supportsVision: false },
           pricing: { input: { usd: 1 }, output: { usd: 2 } },
         },
       }));

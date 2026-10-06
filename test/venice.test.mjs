@@ -78,13 +78,28 @@ test("Venice also accepts the documented privacy error code", async () => {
   assert.equal(result.models.providers.venice.models.length, veniceModelIds.length);
 });
 
+test("Venice pins a model without effort control so Pi sends no effort", async () => {
+  const uncontrolled = structuredClone(config);
+  uncontrolled.models["grok-4-7"].providers.venice.thinking = [];
+  const result = await configureVenice({ existingKey: inferenceKey, config: uncontrolled, auth: {}, models: {}, fetch: veniceFixture().fetch });
+  const grok = result.models.providers.venice.models.find((model) => model.id === "grok-4-7");
+  assert.ok(Object.values(grok.thinkingLevelMap).every((value) => value === null));
+  assert.equal(grok.compat.supportsReasoningEffort, false);
+  const declared = structuredClone(config);
+  declared.models["glm-flash"].providers.venice.thinking = ["low", "high", "max"];
+  await assert.rejects(
+    configureVenice({ existingKey: inferenceKey, config: declared, auth: {}, models: {}, fetch: veniceFixture().fetch }),
+    /Venice model z-ai-glm-5-3-flash accepts thinking \[\]\./,
+  );
+});
+
 test("Venice refuses a catalog thinking level the live model does not accept", async () => {
   const strict = structuredClone(config);
   strict.models["grok-4-7"].providers.venice.thinking.push("max");
   const fixture = veniceFixture();
   await assert.rejects(
     configureVenice({ existingKey: inferenceKey, config: strict, auth: {}, models: {}, fetch: fixture.fetch }),
-    /Venice model grok-4-7 does not accept thinking max\. Remove it from models\.grok-4-7\.providers\.venice\.thinking/,
+    /Venice model grok-4-7 accepts thinking \["low","medium","high","xhigh"\]\. Set models\.grok-4-7\.providers\.venice\.thinking in cyberdeck\.config\.json to \[\] for no thinking control, or to accepted levels that include defaultThinking high\./,
   );
   assert.equal(fixture.calls.length, 2);
 });

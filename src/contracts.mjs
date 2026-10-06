@@ -18,7 +18,7 @@ export const MAX_CONSTRAINT_CHARACTERS = 500;
 function modelLines(config) {
   return Object.entries(config.models).map(
     ([name, model]) =>
-      `${name} (${model.tier}, ${model.family}; ${model.thinking.join("|")}, default ${model.defaultThinking}): ${model.strengths}`,
+      `${name} (${model.tier}, ${model.family}; ${model.thinking.length ? `${model.thinking.join("|")}, default ${model.defaultThinking}` : "provider-set thinking"}): ${model.strengths}`,
   );
 }
 
@@ -41,6 +41,9 @@ export function buildServerInstructions(config) {
 
 function inputSchema(config, modelDescription) {
   const limits = config.limits;
+  const levels = THINKING_LEVELS.filter((level) =>
+    Object.values(config.models).some((model) => model.thinking.includes(level)),
+  );
   return {
     $schema: "https://json-schema.org/draft/2020-12/schema",
     type: "object",
@@ -71,13 +74,13 @@ function inputSchema(config, modelDescription) {
         enum: Object.keys(config.models),
         description: `Catalog model. Omit to use the kind's model, else ${config.defaultModel}. ${modelDescription}`,
       },
-      thinking: {
-        type: "string",
-        enum: THINKING_LEVELS.filter((level) =>
-          Object.values(config.models).some((model) => model.thinking.includes(level)),
-        ),
-        description: "Pi reasoning level; must be one the model lists. Omit to use the model default.",
-      },
+      ...(levels.length && {
+        thinking: {
+          type: "string",
+          enum: levels,
+          description: "Pi reasoning level; must be one the model lists. Omit to use the model default.",
+        },
+      }),
       implemented_by: {
         type: "string",
         enum: [...new Set(Object.values(config.models).map((model) => model.family))],

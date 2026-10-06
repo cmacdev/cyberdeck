@@ -81,7 +81,7 @@ export function makeConfig(fixture, overrides = {}) {
         defaultThinking: "high",
         providers: {
           openrouter: { id: "research/model-c", thinking: ["low", "high"] },
-          venice: { id: "model-c", thinking: ["high"] },
+          venice: { id: "model-c", thinking: [] },
         },
       },
       "model-b": {

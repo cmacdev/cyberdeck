@@ -151,10 +151,13 @@ function parseModel(raw, label, provider) {
   if (!["cheap", "smart"].includes(model.tier)) fail(`${label}.tier must be "cheap" or "smart".`);
   const strengths = expectString(model.strengths, `${label}.strengths`);
   if (strengths.length > 160) fail(`${label}.strengths cannot exceed 160 characters.`);
-  const defaultThinking = expectThinking(model.defaultThinking, `${label}.defaultThinking`);
   const providers = expectObject(model.providers, `${label}.providers`);
   expectKnownKeys(providers, `${label}.providers`, new Set(PROVIDERS));
   if (Object.keys(providers).length === 0) fail(`${label}.providers must list at least one provider.`);
+  const controlled = Object.values(providers).some((entry) => entry?.thinking?.length);
+  const defaultThinking = controlled || model.defaultThinking !== undefined
+    ? expectThinking(model.defaultThinking, `${label}.defaultThinking`)
+    : null;
   let resolved = null;
   for (const [name, entryRaw] of Object.entries(providers)) {
     const entryLabel = `${label}.providers.${name}`;
@@ -162,14 +165,14 @@ function parseModel(raw, label, provider) {
     expectKnownKeys(entry, entryLabel, new Set(["id", "thinking"]));
     const id = expectString(entry.id, `${entryLabel}.id`);
     if (id.length > 200) fail(`${entryLabel}.id cannot exceed 200 characters.`);
-    const thinking = expectStringArray(entry.thinking, `${entryLabel}.thinking`);
+    const thinking = expectStringArray(entry.thinking, `${entryLabel}.thinking`, { allowEmpty: name === "venice" });
     thinking.forEach((level, index) => expectThinking(level, `${entryLabel}.thinking[${index}]`));
-    if (!thinking.includes(defaultThinking)) {
+    if (thinking.length > 0 && !thinking.includes(defaultThinking)) {
       fail(`${label}.defaultThinking must be in ${entryLabel}.thinking.`);
     }
-    if (name === provider) resolved = { id, thinking };
+    if (name === provider) resolved = { id, thinking, defaultThinking: thinking.length ? defaultThinking : null };
   }
-  return resolved && { family, tier: model.tier, strengths, defaultThinking, ...resolved };
+  return resolved && { family, tier: model.tier, strengths, ...resolved };
 }
 
 export async function loadConfig(configPath) {
