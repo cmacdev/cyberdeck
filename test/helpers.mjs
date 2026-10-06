@@ -98,10 +98,12 @@ export function makeConfig(fixture, overrides = {}) {
     profiles: {
       research: {
         tools: ["read", "grep", "find", "ls", "web_search"],
+        codemode: "off",
         promptPreamble: "Research only.",
       },
       implementation: {
         tools: ["read", "grep", "find", "ls", "bash", "edit", "write"],
+        codemode: "off",
         promptPreamble: "Implement and verify.",
       },
     },

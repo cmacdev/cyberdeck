@@ -182,7 +182,8 @@
         "find",
         "ls"
       ],
-      "promptPreamble": "Investigate and report evidence. Do not modify files or external state. Clearly separate facts, inferences, and unknowns."
+      "codemode": "only",
+      "promptPreamble": "Investigate and report evidence. Do not modify files or external state. Clearly separate facts, inferences, and unknowns. In codemode scripts, filter noise, never evidence: keep cited code in context, quote failures verbatim, and read the full-output file when a result is truncated."
     },
     "implementation": {
       "tools": [
@@ -194,7 +195,8 @@
         "edit",
         "write"
       ],
-      "promptPreamble": "Implement only the requested change inside the supplied workspace. Preserve unrelated work, verify proportionately, and report changed files and checks."
+      "codemode": "on",
+      "promptPreamble": "Implement only the requested change inside the supplied workspace. Preserve unrelated work, verify proportionately, and report changed files and checks. In codemode scripts, filter noise, never evidence: read code you change with its context, extract every failure from long output instead of returning it raw, and read the full-output file when a result is truncated."
     }
   }
 }

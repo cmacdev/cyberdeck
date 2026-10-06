@@ -18,6 +18,7 @@ const MAX_TIMEOUT_SECONDS = 86400;
 const TOOL_NAME = /^[A-Za-z0-9_.:-]+$/;
 const NAME = /^[a-z][a-z0-9_-]{0,31}$/;
 const PROVIDERS = ["openrouter", "venice"];
+const CODEMODE_MODES = ["off", "on", "only"];
 
 class ConfigurationError extends Error {
   constructor(message) {
@@ -120,7 +121,7 @@ async function canonicalDirectory(value, configDirectory, label) {
 
 function parseProfile(raw, name) {
   const profile = expectObject(raw, `profiles.${name}`);
-  expectKnownKeys(profile, `profiles.${name}`, new Set(["tools", "promptPreamble"]));
+  expectKnownKeys(profile, `profiles.${name}`, new Set(["tools", "codemode", "promptPreamble"]));
   const tools = expectStringArray(profile.tools, `profiles.${name}.tools`, {
     pattern: TOOL_NAME,
     maxItems: 64,
@@ -132,6 +133,12 @@ function parseProfile(raw, name) {
       fail(`profiles.research.tools cannot include mutating Pi tools: ${forbidden.join(", ")}.`);
     }
   }
+  if (!CODEMODE_MODES.includes(profile.codemode)) {
+    fail(`profiles.${name}.codemode must be one of: ${CODEMODE_MODES.join(", ")}.`);
+  }
+  if (tools.includes("codemode")) {
+    fail(`profiles.${name}.tools cannot list codemode; set profiles.${name}.codemode instead.`);
+  }
   const promptPreamble = expectString(
     profile.promptPreamble,
     `profiles.${name}.promptPreamble`,
@@ -140,7 +147,7 @@ function parseProfile(raw, name) {
   if (promptPreamble.length > 4000) {
     fail(`profiles.${name}.promptPreamble cannot exceed 4000 characters.`);
   }
-  return { tools, promptPreamble };
+  return { tools, codemode: profile.codemode, promptPreamble };
 }
 
 function parseModel(raw, label, provider) {
@@ -378,7 +385,7 @@ export function isWithinRoot(candidate, root) {
 }
 
 function publicProfile(profile, permission) {
-  return { permission, tools: profile.tools, promptPreamble: profile.promptPreamble };
+  return { permission, tools: profile.tools, codemode: profile.codemode, promptPreamble: profile.promptPreamble };
 }
 
 export function publicConfiguration(config) {

@@ -1,8 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import { createWriteStream } from "node:fs";
-import { mkdir, realpath, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, realpath, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { finished } from "node:stream/promises";
 import { StringDecoder } from "node:string_decoder";
 
@@ -13,6 +14,49 @@ import {
   MAX_PATH_CHARACTERS,
   emptyUsage,
 } from "./contracts.mjs";
+
+const CODEMODE_EXTENSION = fileURLToPath(new URL("../pi/codemode.js", import.meta.url));
+const CODEMODE_ENABLED = new Set(["on", "only"]);
+const PI_CODEMODE_UPGRADE =
+  "Pi does not export createCodemodeExtension. Upgrade Pi to 1.0.4 or newer ('npm install -g @earendil-works/pi-coding-agent@latest'), then re-run.";
+
+export function profileToolArguments(profile) {
+  if (!CODEMODE_ENABLED.has(profile.codemode)) return ["--tools", profile.tools.join(",")];
+  return ["--tools", [...profile.tools, "codemode"].join(","), "--extension", CODEMODE_EXTENSION, "--no-mcp"];
+}
+
+async function piPackageRoot(command) {
+  let current;
+  try {
+    current = await realpath(command);
+  } catch {
+    return null;
+  }
+  for (let depth = 0; depth < 8 && current !== path.dirname(current); depth += 1) {
+    try {
+      const manifest = JSON.parse(await readFile(path.join(current, "package.json"), "utf8"));
+      if (manifest.name === "@earendil-works/pi-coding-agent") return current;
+    } catch {}
+    current = path.dirname(current);
+  }
+  return null;
+}
+
+export async function assertCodemodeExport(command) {
+  const root = await piPackageRoot(command);
+  if (!root) return;
+  let source;
+  try {
+    source = await readFile(path.join(root, "dist", "index.js"), "utf8");
+  } catch {
+    throw new InputError(PI_CODEMODE_UPGRADE);
+  }
+  if (!source.includes("createCodemodeExtension")) throw new InputError(PI_CODEMODE_UPGRADE);
+}
+
+function codemodeStartupError(stderr) {
+  return typeof stderr === "string" && stderr.includes("createCodemodeExtension") ? PI_CODEMODE_UPGRADE : null;
+}
 
 const INPUT_KEYS = new Set([
   "task",
@@ -396,6 +440,7 @@ export async function runPi(profileName, rawInput, config, signal) {
   const input = await validateInput(profileName, rawInput, config);
   if (signal?.aborted) return null;
   const profile = config.profiles[profileName];
+  if (CODEMODE_ENABLED.has(profile.codemode)) await assertCodemodeExport(config.pi.command);
   const runId = makeRunId();
   const runDirectory = path.join(config.artifactDirectory, runId);
   const paths = {
@@ -421,8 +466,7 @@ export async function runPi(profileName, rawInput, config, signal) {
     "--model",
     input.model,
     ...(input.thinking === null ? [] : ["--thinking", input.thinking]),
-    "--tools",
-    profile.tools.join(","),
+    ...profileToolArguments(profile),
     config.pi.trustProjectFiles ? "--approve" : "--no-approve",
   ];
   if (!config.pi.loadContextFiles) piArgs.push("--no-context-files");
@@ -440,6 +484,7 @@ export async function runPi(profileName, rawInput, config, signal) {
     model: input.model,
     thinking: input.thinking,
     tools: profile.tools,
+    codemode: profile.codemode,
     workingDirectory: input.workingDirectory,
     contextFiles: input.contextFiles,
     constraints: input.constraints,
@@ -463,6 +508,7 @@ export async function runPi(profileName, rawInput, config, signal) {
     ...process.env,
     PI_SKIP_VERSION_CHECK: "1",
     PI_TELEMETRY: "0",
+    CYBERDECK_CODEMODE: profile.codemode,
     ...(config.pi.stateDirectory
       ? { PI_CODING_AGENT_DIR: config.pi.stateDirectory }
       : {}),
@@ -521,6 +567,9 @@ export async function runPi(profileName, rawInput, config, signal) {
         execution.spawnError?.message ||
         execution.stderrTail ||
         `Pi exited with code ${execution.exitCode}.`;
+    }
+    if (CODEMODE_ENABLED.has(profile.codemode)) {
+      rawError = codemodeStartupError(`${execution.stderrTail}\n${execution.spawnError?.message ?? ""}`) ?? rawError;
     }
   }
   const error = rawError === null ? null : truncateError(rawError);
