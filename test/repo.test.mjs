@@ -78,8 +78,11 @@ test("the README model and kind tables mirror the shipped configuration", async 
     const thinking = model.providers.openrouter.thinking;
     assert.deepEqual(row.slice(1, 3), [model.tier, model.family], name);
     assert.equal(row[3], thinking.map((level) => (level === model.defaultThinking ? `**${level}**` : level)).join(", ") || "none", name);
-    const id = (provider) => (model.providers[provider] ? `\`${model.providers[provider].id}\`` : "–");
-    assert.deepEqual(row.slice(4, 6), [id("openrouter"), id("venice")], name);
+    const venice = model.providers.venice;
+    const veniceThinking = venice && venice.thinking.join() !== thinking.join()
+      ? ` (${venice.thinking.length ? `thinking: ${venice.thinking.join(", ")}` : "no thinking control"})`
+      : "";
+    assert.deepEqual(row.slice(4, 6), [`\`${model.providers.openrouter.id}\``, venice ? `\`${venice.id}\`${veniceThinking}` : "–"], name);
   }
   const kinds = tableRows(readme, "### Kinds");
   assert.deepEqual(

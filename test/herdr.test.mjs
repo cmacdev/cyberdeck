@@ -7,9 +7,9 @@ import { loadConfig } from "../src/config.mjs";
 import { HerdrWorkers, herdrEnvironment, orchestrationGuard, workerSession } from "../src/herdr-workers.mjs";
 import { makeFixture } from "./helpers.mjs";
 
-async function setup(t) {
+async function setup(t, overrides) {
   const fixture = await makeFixture(t);
-  const configPath = await fixture.writeConfig("herdr");
+  const configPath = await fixture.writeConfig("herdr", overrides);
   const config = await loadConfig(configPath);
   config.pi.command = "/configured/bin/pi";
   await mkdir(path.join(config.pi.stateDirectory, "extensions"), { recursive: true });
@@ -83,6 +83,12 @@ test("each worker model selects its configured thinking while preserving explici
   const args = calls.filter(({ args }) => args[1] === "start").at(-1).args;
   assert.equal(args[args.indexOf("--model") + 1], "research/model-a");
   assert.equal(args[args.indexOf("--thinking") + 1], "low");
+});
+
+test("a worker on a Venice model without thinking control gets no thinking flag", async (t) => {
+  const { manager, calls } = await setup(t, { provider: "venice" });
+  await manager.run({ action: "start", name: "plain", model: "model-c" });
+  assert.ok(!calls.find(({ args }) => args[1] === "start").args.includes("--thinking"));
 });
 
 test("send gates completion and preserves worker identity across follow-ups", async (t) => {

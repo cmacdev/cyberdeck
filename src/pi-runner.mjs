@@ -141,10 +141,14 @@ export async function validateInput(profileName, rawInput, config) {
     }
   }
   const thinking =
-    input.thinking === undefined ? model.defaultThinking : requiredString(input.thinking, "thinking", 20);
-  if (!model.thinking.includes(thinking)) {
+    input.thinking === undefined || input.thinking === null
+      ? model.defaultThinking
+      : requiredString(input.thinking, "thinking", 20);
+  if (thinking !== null && !model.thinking.includes(thinking)) {
     inputFail(
-      `thinking ${thinking} is not supported by ${modelName} on ${config.provider}; use one of: ${model.thinking.join(", ")}.`,
+      model.thinking.length
+        ? `thinking ${thinking} is not supported by ${modelName} on ${config.provider}; use one of: ${model.thinking.join(", ")}.`
+        : `${modelName} on ${config.provider} has no thinking control; omit thinking.`,
     );
   }
   const contextValues = stringArray(
@@ -416,8 +420,7 @@ export async function runPi(profileName, rawInput, config, signal) {
     config.provider,
     "--model",
     input.model,
-    "--thinking",
-    input.thinking,
+    ...(input.thinking === null ? [] : ["--thinking", input.thinking]),
     "--tools",
     profile.tools.join(","),
     config.pi.trustProjectFiles ? "--approve" : "--no-approve",

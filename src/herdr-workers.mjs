@@ -127,7 +127,7 @@ export class HerdrWorkers {
       "--env", `PATH=${path.dirname(this.config.pi.command)}:${this.environment.PATH}`, "--no-focus"], { signal });
     const pane = created.root_pane.pane_id;
     const args = [...this.config.pi.arguments, "--provider", this.config.provider,
-      "--model", resolved.model, "--thinking", resolved.thinking,
+      "--model", resolved.model, ...(resolved.thinking === null ? [] : ["--thinking", resolved.thinking]),
       "--tools", this.config.profiles[profile].tools.join(","),
       "--extension", extension, "--offline", "--name", input.name,
       "--session-dir", path.join(this.directory, "sessions", input.name),

@@ -2,7 +2,7 @@ import { chmod, mkdir, readFile, realpath, rename, writeFile } from "node:fs/pro
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { pinnedThinkingMap } from "../src/config.mjs";
+import { pinnedThinkingMap, THINKING_LEVELS } from "../src/config.mjs";
 
 const baseUrl = "https://api.venice.ai/api/v1";
 
@@ -40,10 +40,11 @@ export async function configureVenice({ existingKey, config, auth, models, fetch
   for (const [name, model] of declared) {
     const { id, thinking } = model.providers.venice;
     const capabilities = selected.find((item) => item.id === id).model_spec.capabilities;
-    const missing = thinking.filter((level) => capabilities.supportsReasoning !== true
-      || !capabilities.reasoningEffortOptions?.includes(level === "off" ? "none" : level));
-    if (missing.length) {
-      throw new Error(`Venice model ${id} does not accept thinking ${missing.join(", ")}. Remove it from models.${name}.providers.venice.thinking in cyberdeck.config.json.`);
+    const accepted = capabilities.supportsReasoning === true
+      ? THINKING_LEVELS.filter((level) => capabilities.reasoningEffortOptions?.includes(level === "off" ? "none" : level))
+      : [];
+    if (thinking.some((level) => !accepted.includes(level))) {
+      throw new Error(`Venice model ${id} accepts thinking ${JSON.stringify(accepted)}. Set models.${name}.providers.venice.thinking in cyberdeck.config.json to [] for no thinking control${accepted.includes(model.defaultThinking) ? `, or to accepted levels that include defaultThinking ${model.defaultThinking}` : ""}.`);
     }
   }
   const provider = models.providers?.venice ?? {};
@@ -66,16 +67,17 @@ export async function configureVenice({ existingKey, config, auth, models, fetch
     throw new Error(`Venice privacy check did not confirm enforcement (HTTP ${response.status}). Set this inference key to Private Only in Venice API settings, then re-run. No task data was sent. Response: ${JSON.stringify(rejection).replaceAll(key, "[redacted]").slice(0, 600)}`);
   }
   auth.venice = { type: "api_key", key };
+  const thinkingById = new Map(declared.map(([, model]) => [model.providers.venice.id, model.providers.venice.thinking]));
   const registered = selected.map(({ id, model_spec: spec }) => ({
     id,
     name: spec.name,
     reasoning: spec.capabilities.supportsReasoning,
-    thinkingLevelMap: pinnedThinkingMap(declared.find(([, model]) => model.providers.venice.id === id)[1].providers.venice.thinking),
+    thinkingLevelMap: pinnedThinkingMap(thinkingById.get(id)),
     input: spec.capabilities.supportsVision ? ["text", "image"] : ["text"],
     contextWindow: spec.availableContextTokens,
     maxTokens: spec.maxCompletionTokens,
     cost: { input: spec.pricing.input.usd, output: spec.pricing.output.usd, cacheRead: spec.pricing.cache_input?.usd ?? 0, cacheWrite: 0 },
-    compat: { supportsReasoningEffort: spec.capabilities.supportsReasoningEffort === true },
+    compat: { supportsReasoningEffort: thinkingById.get(id).length > 0 },
     samplingParams: { venice_parameters: { include_venice_system_prompt: false, enable_web_search: "off", enable_web_scraping: false, enable_x_search: false } },
   }));
   (models.providers ??= {}).venice = {

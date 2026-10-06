@@ -38,13 +38,13 @@ Cyberdeck is a local stdio MCP server with no npm dependencies. The caller decid
 
 ## Tools and models
 
-`research` refuses Pi's `bash`, `edit`, and `write` tools. `implement` is annotated destructive and open-world. Any model works with either tool. Omit `model` for the `kind` preset's model, else `defaultModel`. `model` is the catalog key (`grok-4-7`), not the provider ID (`x-ai/grok-4.7`). Omit `thinking` for the model's default (bold); a level the model does not list is rejected, and every install pins Pi to exactly the listed levels, so Pi never substitutes another. Policy is `cyberdeck.config.json`. `npm run inspect` prints the resolved contract; `cyberdeck://catalog` and `cyberdeck://profiles` expose it.
+`research` refuses Pi's `bash`, `edit`, and `write` tools. `implement` is annotated destructive and open-world. Any model works with either tool. Omit `model` for the `kind` preset's model, else `defaultModel`. `model` is the catalog key (`grok-4-7`), not the provider ID (`x-ai/grok-4.7`). Omit `thinking` for the model's default (bold); a level the model does not list is rejected, and every install pins Pi to exactly the listed levels, so Pi never substitutes another. The Thinking column lists OpenRouter levels; the Venice column notes levels that differ there. "no thinking control" means Venice sets it and a `thinking` argument is rejected. Policy is `cyberdeck.config.json`. `npm run inspect` prints the resolved contract; `cyberdeck://catalog` and `cyberdeck://profiles` expose it.
 
 | Model | Tier | Family | Thinking | OpenRouter | Venice | Strengths |
 | --- | --- | --- | --- | --- | --- | --- |
 | `deepseek-flash` | cheap | deepseek | low, high, **max** | `deepseek/deepseek-v4-flash-0731` | `deepseek-v4-flash-0731` | Bulk reading, long-context recall, tests, docs |
 | `deepseek-flash-4-1` | cheap | deepseek | off, low, high, **max** | `deepseek/deepseek-v4.1-flash` | `deepseek-v4-1-flash` | Planning, debugging, security review; fast |
-| `glm-flash` | cheap | glm | low, high, **max** | `z-ai/glm-5.3-flash` | `z-ai-glm-5-3-flash` | Implementation and tool loops; cheapest strong coder |
+| `glm-flash` | cheap | glm | low, high, **max** | `z-ai/glm-5.3-flash` | `z-ai-glm-5-3-flash` (no thinking control) | Implementation and tool loops; cheapest strong coder |
 | `mimo-flash` | cheap | mimo | off, minimal, low, medium, **high** | `xiaomi/mimo-v2.6-flash` | – | Tool calling; cross-family reviewer; weak on security |
 | `deepseek-pro` | smart | deepseek | low, **high**, max | `deepseek/deepseek-v4-pro-0813` | `deepseek-v4-pro-0813` | Smart reader for very large context |
 | `grok-4-7` | smart | grok | low, medium, **high**, xhigh | `x-ai/grok-4.7` | `grok-4-7` | Default smart worker; price doubles over 200K context |

@@ -47,7 +47,7 @@
         },
         "venice": {
           "id": "z-ai-glm-5-3-flash",
-          "thinking": ["low", "high", "max"]
+          "thinking": []
         }
       }
     },

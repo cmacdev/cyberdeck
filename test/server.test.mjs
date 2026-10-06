@@ -371,6 +371,18 @@ test("implement uses the write-capable tools with any catalog model", async (t) 
   assert.equal(argumentValue(invocation.argv, "--append-system-prompt"), "Implement and verify.");
 });
 
+test("a Venice model without thinking control runs without a thinking flag and rejects one", async (t) => {
+  const { fixture, client } = await serverFor(t, { provider: "venice" });
+  const result = await call(client, "research", callArguments(fixture, { model: "model-c" }));
+  assert.equal(result.structuredContent.ok, true);
+  assert.equal(result.structuredContent.thinking, null);
+  assert.ok(!JSON.parse(result.structuredContent.final_output).argv.includes("--thinking"));
+  const echoed = await call(client, "research", callArguments(fixture, { model: "model-c", thinking: null }));
+  assert.equal(echoed.structuredContent.ok, true);
+  const rejected = await call(client, "research", callArguments(fixture, { model: "model-c", thinking: "high" }));
+  assert.match(rejected.structuredContent.error, /model-c on venice has no thinking control; omit thinking/);
+});
+
 test("model, kind, thinking, and reviewer family are validated against the catalog", async (t) => {
   const { fixture, client } = await serverFor(t);
   const unknownModel = await call(client, "research", callArguments(fixture, { model: "research/model-a" }));

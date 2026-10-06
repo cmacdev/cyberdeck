@@ -153,7 +153,6 @@
         "family",
         "tier",
         "strengths",
-        "defaultThinking",
         "providers"
       ],
       "properties": {
@@ -176,14 +175,25 @@
         },
         "defaultThinking": {
           "$ref": "#/$defs/thinking",
-          "description": "Used when the caller omits thinking; must be in every provider's thinking list."
+          "description": "Used when the caller omits thinking; required unless every provider thinking list is empty, and must be in every non-empty one."
         },
         "providers": {
           "type": "object",
           "additionalProperties": false,
           "properties": {
             "openrouter": {
-              "$ref": "#/$defs/providerModel"
+              "allOf": [
+                {
+                  "$ref": "#/$defs/providerModel"
+                },
+                {
+                  "properties": {
+                    "thinking": {
+                      "minItems": 1
+                    }
+                  }
+                }
+              ]
             },
             "venice": {
               "$ref": "#/$defs/providerModel"
@@ -210,12 +220,11 @@
         },
         "thinking": {
           "type": "array",
-          "minItems": 1,
           "uniqueItems": true,
           "items": {
             "$ref": "#/$defs/thinking"
           },
-          "description": "Levels this provider accepts for the model; the installer pins Pi to exactly these."
+          "description": "Levels this provider accepts for the model; the installer pins Pi to exactly these. Venice only: [] means the provider sets thinking and callers may not."
         }
       }
     },
