@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 import { coordinator } from "../pi/coordinator.js";
 import { loadConfig } from "../src/config.mjs";
 import { HerdrWorkers, herdrEnvironment, orchestrationGuard, workerSession } from "../src/herdr-workers.mjs";
@@ -66,6 +67,39 @@ test("worker launch reuses profile policy and preserves sessions without enablin
   await assert.rejects(manager.run({ action: "start", name: "outside", working_directory: "/" }), /workspaceRoots/);
   await assert.rejects(manager.run({ action: "start", name: "bad", model: "wrong/model" }), /not a model available/);
   await assert.rejects(manager.run({ action: "start", name: "same", kind: "review", implemented_by: "gamma" }), /gamma family that implemented the work/);
+});
+
+test("a codemode worker loads Cyberdeck's extension with the profile's mode", async (t) => {
+  const { manager, calls } = await setup(t, {
+    profiles: {
+      research: { tools: ["read"], codemode: "off", promptPreamble: "" },
+      implementation: { tools: ["read", "grep", "find", "ls", "bash", "edit", "write"], codemode: "on", promptPreamble: "" },
+    },
+  });
+  await manager.run({ action: "start", name: "coder", profile: "implementation" });
+  assert.ok(calls.find(({ args }) => args[1] === "create").args.includes("CYBERDECK_CODEMODE=on"));
+  const args = calls.find(({ args }) => args[1] === "start").args;
+  assert.equal(args[args.indexOf("--tools") + 1], "read,grep,find,ls,bash,edit,write,codemode");
+  assert.ok(args.includes(fileURLToPath(new URL("../pi/codemode.js", import.meta.url))));
+  assert.ok(args.includes("--no-mcp"));
+});
+
+test("a codemode worker refuses a Pi that lacks createCodemodeExtension", async (t) => {
+  const { manager, calls, fixture } = await setup(t, {
+    profiles: {
+      research: { tools: ["read"], codemode: "only", promptPreamble: "" },
+      implementation: { tools: ["read", "bash", "edit", "write"], codemode: "on", promptPreamble: "" },
+    },
+  });
+  const root = path.join(fixture.root, "old-pi");
+  await mkdir(path.join(root, "dist"), { recursive: true });
+  await writeFile(path.join(root, "package.json"), '{"name":"@earendil-works/pi-coding-agent"}\n');
+  await writeFile(path.join(root, "dist", "index.js"), "export {}\n");
+  const command = path.join(root, "pi");
+  await writeFile(command, "");
+  manager.config.pi.command = command;
+  await assert.rejects(manager.run({ action: "start", name: "scout", profile: "research" }), /createCodemodeExtension/);
+  assert.equal(calls.length, 0);
 });
 
 test("each worker model selects its configured thinking while preserving explicit overrides", async (t) => {

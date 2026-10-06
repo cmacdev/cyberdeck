@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
-import { access, readFile, readdir, realpath, rm, stat, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, readdir, realpath, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { createInterface } from "node:readline";
 import { PassThrough } from "node:stream";
 import test from "node:test";
 
 import { loadConfig } from "../src/config.mjs";
+import { assertCodemodeExport, profileToolArguments } from "../src/pi-runner.mjs";
 import { createServer } from "../src/server.mjs";
 
 import {
@@ -504,6 +505,98 @@ test("pi flags follow the configuration", async (t) => {
   assert.ok(!invocation.argv.includes("--no-approve"));
   assert.ok(invocation.argv.includes("--no-context-files"));
   assert.equal(invocation.piStateDirectory, null, "no PI_CODING_AGENT_DIR when stateDirectory is null");
+});
+
+test("codemode loads Cyberdeck's extension with the profile's mode and no MCP", async (t) => {
+  const { fixture, client } = await serverFor(t, {
+    profiles: {
+      research: { tools: RESEARCH_TOOLS, codemode: "only", promptPreamble: "" },
+      implementation: { tools: ["read", "grep", "find", "ls", "bash", "edit", "write"], codemode: "on", promptPreamble: "" },
+    },
+  });
+  for (const [tool, mode, tools] of [["research", "only", RESEARCH_TOOLS], ["implement", "on", ["read", "grep", "find", "ls", "bash", "edit", "write"]]]) {
+    const result = await call(client, tool, callArguments(fixture));
+    const invocation = JSON.parse(result.structuredContent.final_output);
+    assert.equal(argumentValue(invocation.argv, "--tools"), [...tools, "codemode"].join(","));
+    assert.equal(argumentValue(invocation.argv, "--extension"), path.join(packageDirectory, "pi", "codemode.js"));
+    assert.ok(invocation.argv.includes("--no-mcp"));
+    assert.equal(invocation.codemode, mode);
+    assert.deepEqual(result.structuredContent.tools, tools);
+    const request = JSON.parse(await readFile(result.structuredContent.artifacts.request, "utf8"));
+    assert.equal(request.codemode, mode);
+  }
+});
+
+test("codemode off keeps Pi's tool list and loads no extension", async (t) => {
+  const { fixture, client } = await serverFor(t);
+  const invocation = JSON.parse((await call(client, "research", callArguments(fixture))).structuredContent.final_output);
+  assert.equal(argumentValue(invocation.argv, "--tools"), RESEARCH_TOOLS.join(","));
+  assert.ok(!invocation.argv.includes("--extension"));
+  assert.ok(!invocation.argv.includes("--no-mcp"));
+  assert.equal(invocation.codemode, "off");
+});
+
+test("codemode arguments stay off unless the mode is on or only", () => {
+  assert.deepEqual(profileToolArguments({ tools: ["read"], codemode: "off" }), ["--tools", "read"]);
+  assert.deepEqual(profileToolArguments({ tools: ["read"], codemode: "always" }), ["--tools", "read"]);
+  const enabled = profileToolArguments({ tools: ["read"], codemode: "only" });
+  assert.equal(enabled[1], "read,codemode");
+  assert.ok(enabled.includes("--no-mcp"));
+  assert.ok(enabled.includes("--extension"));
+});
+
+test("an older Pi is rejected before a codemode run starts", async (t) => {
+  const fixture = await makeFixture(t);
+  const root = path.join(fixture.root, "old-pi");
+  await mkdir(path.join(root, "dist"), { recursive: true });
+  await writeFile(path.join(root, "package.json"), '{"name":"@earendil-works/pi-coding-agent"}\n');
+  await writeFile(path.join(root, "dist", "index.js"), "export {}\n");
+  const command = path.join(root, "pi");
+  await writeFile(command, "");
+  const configPath = await fixture.writeConfig("config", {
+    pi: { command },
+    profiles: {
+      research: { tools: RESEARCH_TOOLS, codemode: "only", promptPreamble: "" },
+      implementation: { tools: ["read", "grep", "find", "ls", "bash", "edit", "write"], codemode: "on", promptPreamble: "" },
+    },
+  });
+  const client = startServer(t, configPath, { cwd: fixture.workspace });
+  const result = await call(client, "research", callArguments(fixture));
+  assert.equal(result.isError, true);
+  assert.equal(result.structuredContent.status, "rejected");
+  assert.match(result.structuredContent.error, /createCodemodeExtension/);
+  assert.match(result.structuredContent.error, /npm install -g @earendil-works\/pi-coding-agent@latest/);
+  await assert.rejects(readdir(fixture.artifactDirectory));
+});
+
+test("a current Pi package is accepted and a non-Pi command is not checked", async (t) => {
+  const fixture = await makeFixture(t);
+  await assert.doesNotReject(assertCodemodeExport(process.execPath));
+  const root = path.join(fixture.root, "current-pi");
+  await mkdir(path.join(root, "dist"), { recursive: true });
+  await writeFile(path.join(root, "package.json"), '{"name":"@earendil-works/pi-coding-agent"}\n');
+  await writeFile(path.join(root, "dist", "index.js"), "export { createCodemodeExtension }\n");
+  await assert.doesNotReject(assertCodemodeExport(path.join(root, "pi")));
+  await writeFile(path.join(root, "pi"), "");
+  await assert.doesNotReject(assertCodemodeExport(path.join(root, "pi")));
+});
+
+test("a Pi that fails to load codemode is told to upgrade", async (t) => {
+  const { fixture, client } = await serverFor(t, {
+    profiles: {
+      research: { tools: RESEARCH_TOOLS, codemode: "only", promptPreamble: "" },
+      implementation: { tools: ["read", "grep", "find", "ls", "bash", "edit", "write"], codemode: "on", promptPreamble: "" },
+    },
+  });
+  const result = await call(client, "research", callArguments(fixture, { task: "FAKE_OLD_PI" }));
+  assert.equal(result.structuredContent.status, "failed");
+  assert.match(result.structuredContent.error, /npm install -g @earendil-works\/pi-coding-agent@latest/);
+});
+
+test("the shipped policy enables codemode for both tools", async () => {
+  const shipped = JSON.parse(await readFile(path.join(packageDirectory, "cyberdeck.config.json"), "utf8"));
+  assert.equal(shipped.profiles.research.codemode, "only");
+  assert.equal(shipped.profiles.implementation.codemode, "on");
 });
 
 test("the shipped policy disables extension and skill discovery for both tools", async (t) => {
