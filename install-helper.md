@@ -20,8 +20,8 @@ Every stop prints its cause; apply the fix and re-run the same command.
 | `<dir> exists and is not a Cyberdeck home` | `CYBERDECK_HOME` points at an unrelated directory. Point it at a new or empty one, or unset it to use `~/.cyberdeck`. |
 | `no terminal available for the API key prompt` | Run in an interactive terminal (the prompt reads `/dev/tty`), or set `OPENROUTER_API_KEY` for the installer. Agents: hand this step to the user; never ask for or handle the key. |
 | `unknown provider` | Re-run with `--provider openrouter` or `--provider venice`. |
-| `no terminal available for the Venice key prompt` / `empty Venice key` | Set `VENICE_API_KEY` or run interactively and enter an inference key with Private Only selected in Venice API settings. |
-| `Venice setup failed` | Fix the reported API, model, or JSON error. Use a valid inference key with Private Only selected in Venice API settings. The installer requires an explicit service refusal of a synthetic anonymous text request and private, available, tool-capable catalog models that accept every listed thinking level. The only anonymized catalog id allowed is `abliteration-abliterated-model-large-v2`; do not remove it for being anonymized. Other models must be private. The error names the levels Venice accepts for the model to list instead, or `[]` for no thinking control. Remove conflicting Venice auth/endpoint overrides from `models.json`. |
+| `no terminal available for the Venice key prompt` / `empty Venice key` | Set `VENICE_API_KEY` or run interactively and enter an unrestricted or Private Only Venice inference key. |
+| `Venice setup failed` | Fix the reported API, model, or JSON error. Use a valid unrestricted or Private Only Venice inference key. The installer requires private, available, tool-capable catalog models that accept every listed thinking level. The only anonymized catalog id allowed is `abliteration-abliterated-model-large-v2`; do not remove it for being anonymized. Other models must be private. The error names the levels Venice accepts for the model to list instead, or `[]` for no thinking control. Remove conflicting Venice auth/endpoint overrides from `models.json`. |
 | `OpenRouter setup failed` | Make `~/.pi/agent/models.json` valid JSON (Pi accepts comments there; this installer does not) and writable, then re-run. |
 | `empty API key` / `Pi does not report OpenRouter credentials as ready` | Nothing was stored, or Pi rejected the key. Check `pi auth check --provider openrouter`; re-run to be prompted again. |
 | `pi was installed or detected but cannot now be found on PATH` | Add npm's global `bin` directory to the current shell's `PATH` and re-run. |
@@ -60,8 +60,8 @@ and expect `final_output` containing `READY`.
 
 ## Manual client setup
 
-Run the installer for the selected provider's privacy controls before setting up a client manually.
-Use `--provider venice` for a restricted inference key and Pi model registration, or
+Run the installer for the selected provider's controls before setting up a client manually.
+Use `--provider venice` for inference-key validation and Pi model registration, or
 `--provider openrouter` for the ZDR routing pin.
 
 Any MCP client: `node /abs/cyberdeck/bin/cyberdeck-mcp.mjs --config /abs/cyberdeck.config.json`,
@@ -96,9 +96,9 @@ Re-run the same install command. It resets `~/.cyberdeck/app` to the published v
 `~/.cyberdeck/cyberdeck.config.json` with that version's policy for the selected provider.
 Machine paths are rewritten: the Pi executable, Pi state directory, artifact directory, and
 schema path. Models, kinds, limits, workspace roots, and Pi arguments are not preserved.
-Unrelated Pi settings are. The selected provider's privacy controls are reapplied before that
-replacement; a failed Venice check leaves the previous policy in place. Venice reuses its saved
-inference key, checks privacy enforcement against the published policy, and refreshes model
+Unrelated Pi settings are. The selected provider's controls are reapplied before that replacement;
+a failed Venice check leaves the previous policy in place. Venice reuses its saved inference key,
+checks catalog model privacy against the published policy, and refreshes model
 metadata. Every install runs `npm install -g @earendil-works/pi-coding-agent@latest`, including
 when Pi is already present. `--dry-run` does not install, but still requires npm and a writable
 global directory. There is no pin and no flag to keep an older Pi. A prerelease can move back to
