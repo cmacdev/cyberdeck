@@ -103,9 +103,9 @@ test("Venice install replaces a stale policy and preserves provider credentials"
     PATH: `${bin}:${testSystemPath}`, NODE_OPTIONS: `--import=${preload}`,
   };
   const dry = await execFileAsync("bash", ["install.sh", "--provider", "venice", "--dry-run"], { cwd: packageDirectory, env });
-  assert.match(dry.stdout, /blocks anonymous/);
+  assert.match(dry.stdout, /verify the Venice inference key/);
   assert.equal(existsSync(agentDirectory), false);
-  await writeFile(preload, `import { veniceFixture } from ${JSON.stringify(path.join(packageDirectory, "fixtures/venice-api.mjs"))}; globalThis.fetch = veniceFixture({ failPath: "/chat/completions" }).fetch;\n`);
+  await writeFile(preload, `import { veniceFixture } from ${JSON.stringify(path.join(packageDirectory, "fixtures/venice-api.mjs"))}; globalThis.fetch = veniceFixture({ failPath: "/models" }).fetch;\n`);
   const failed = await runWithClosedInput("bash", ["install.sh", "--provider", "venice"], { cwd: packageDirectory, env });
   assert.equal(failed.code, 1);
   assert.match(failed.stderr, /Venice setup failed/);
@@ -131,7 +131,7 @@ test("Venice install replaces a stale policy and preserves provider credentials"
   const authPath = path.join(agentDirectory, "auth.json");
   const auth = JSON.parse(await readFile(authPath, "utf8"));
   assert.deepEqual(auth.venice, { type: "api_key", key: inferenceKey });
-  await writeFile(preload, `import { veniceFixture } from ${JSON.stringify(path.join(packageDirectory, "fixtures/venice-api.mjs"))}; globalThis.fetch = veniceFixture({ failPath: "/chat/completions" }).fetch;\n`);
+  await writeFile(preload, `import { veniceFixture } from ${JSON.stringify(path.join(packageDirectory, "fixtures/venice-api.mjs"))}; globalThis.fetch = veniceFixture({ failPath: "/models" }).fetch;\n`);
   const failedAgain = await runWithClosedInput("bash", ["install.sh", "--provider", "venice"], { cwd: packageDirectory, env });
   assert.equal(failedAgain.code, 1);
   assert.equal(await readFile(configPath, "utf8"), JSON.stringify(policy));

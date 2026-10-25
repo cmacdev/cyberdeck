@@ -11,14 +11,13 @@ const setup = (fixture, overrides = {}) => configureVenice({
   existingKey: inferenceKey, config, auth: {}, models: {}, fetch: fixture.fetch, ...overrides,
 });
 
-test("Venice accepts an inference key and proves anonymous requests are rejected without managing keys", async () => {
+test("Venice accepts an inference key without making an inference request", async () => {
   const fixture = veniceFixture();
   const result = await setup(fixture, { auth: { openrouter: { type: "api_key", key: "keep" } }, models: { providers: { other: { baseUrl: "keep" } } } });
   assert.deepEqual(result.auth.venice, { type: "api_key", key: inferenceKey });
   assert.equal(result.auth.openrouter.key, "keep");
   assert.equal(result.models.providers.other.baseUrl, "keep");
-  assert.deepEqual(fixture.calls.map((call) => call.path), ["/api_keys/rate_limits", "/models", "/chat/completions"]);
-  assert.deepEqual(fixture.calls.at(-1).body.messages, [{ role: "user", content: "1" }]);
+  assert.deepEqual(fixture.calls.map((call) => call.path), ["/api_keys/rate_limits", "/models"]);
   const provider = result.models.providers.venice;
   assert.equal(provider.api, "openai-completions");
   assert.equal(provider.baseUrl, "https://api.venice.ai/api/v1");
@@ -34,15 +33,7 @@ test("Venice reuses stored inference credentials and refreshes only model metada
   assert.deepEqual(again, result);
 });
 
-test("Venice refuses unrestricted keys without weakening ZDR or sending task data", async () => {
-  const fixture = veniceFixture({ privacy: "ALL" });
-  const auth = {};
-  await assert.rejects(setup(fixture, { auth }), /Set this inference key to Private Only/);
-  assert.deepEqual(auth, {});
-  assert.equal(fixture.calls.at(-1).body.max_tokens, 1);
-});
-
-test("Venice fails closed on anonymous or unverified catalog models before probing", async () => {
+test("Venice fails closed on anonymous or unverified catalog models", async () => {
   for (const modelPrivacy of ["anonymized", "missing", "unknown"]) {
     const fixture = veniceFixture({ modelPrivacy });
     await assert.rejects(setup(fixture), /not private/);
@@ -59,8 +50,8 @@ test("Venice allows only the abliterated large v2 model to be anonymized", async
   await assert.rejects(setup(veniceFixture({ modelPrivacyById: { [id]: "unknown" } })), new RegExp(`Venice model ${id} is unavailable, not private`));
 });
 
-test("Venice rejects failed authentication and unrelated refusals without exposing secrets", async () => {
-  for (const failPath of ["/models", "/api_keys/rate_limits", "/chat/completions"]) {
+test("Venice rejects failed authentication and catalog requests without exposing secrets", async () => {
+  for (const failPath of ["/models", "/api_keys/rate_limits"]) {
     const fixture = veniceFixture({ failPath });
     const auth = {};
     const models = {};
@@ -74,17 +65,12 @@ test("Venice rejects failed authentication and unrelated refusals without exposi
   }
 });
 
-test("Venice rejects alternate credentials that could bypass the restricted key", async () => {
+test("Venice rejects alternate credentials that could bypass the stored key", async () => {
   for (const provider of [{ apiKey: "override" }, { headers: { Authorization: "override" } }, { modelOverrides: {} }]) {
     const fixture = veniceFixture();
     await assert.rejects(setup(fixture, { models: { providers: { venice: provider } } }), /can bypass/);
     assert.ok(fixture.calls.every((call) => call.method === "GET"));
   }
-});
-
-test("Venice also accepts the documented privacy error code", async () => {
-  const result = await setup(veniceFixture({ errorFormat: "code" }));
-  assert.equal(result.models.providers.venice.models.length, veniceModelIds.length);
 });
 
 test("Venice pins a model without effort control so Pi sends no effort", async () => {

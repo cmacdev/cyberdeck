@@ -73,7 +73,7 @@ An optional `kind` sets the default model and appends its preamble. Kinds are pr
 
 The task, constraints, attached `context_files`, and whatever enabled Pi tools read go to the selected provider. Cyberdeck makes no network calls. Each MCP run sets `PI_SKIP_VERSION_CHECK=1` and `PI_TELEMETRY=0`. Pi's own tools still reach the network when the task does, including `bash` under `implement`.
 
-The installer contacts github.com (clone), the npm registry (Pi, on every install), and Venice's API when configuring Venice: authentication, model metadata, and a one-token privacy probe containing only `1`. An unrestricted key may incur a minimal charge. Inference keys live in Pi's auth store. Provider ZDR does not cover local artifacts or external tools.
+The installer contacts github.com (clone), the npm registry (Pi, on every install), and Venice's API when configuring Venice for authentication and model metadata. Inference keys live in Pi's auth store. Provider ZDR does not cover local artifacts or external tools.
 
 Enforced and unenforced boundaries: [SECURITY.md](SECURITY.md). Read it before unattended `implement`.
 
@@ -87,7 +87,7 @@ Run the command at the top. From a checkout: `bash install.sh [--provider openro
 
 Interactive installs ask for a provider, defaulting to the installed choice or OpenRouter. `--provider` skips the prompt. `--codex-only` installs and uninstalls without invoking Claude's CLI.
 
-OpenRouter uses `OPENROUTER_API_KEY` or a hidden prompt, and keeps an existing Pi credential. Venice uses the saved Pi key, `VENICE_API_KEY`, or a hidden prompt. Set that key to **Private Only** in [Venice API settings](https://venice.ai/settings/api) before installing. Each install checks that an anonymous text request is rejected. No admin key is required. A privacy failure stops the install; there is no weaker fallback. OpenRouter pins `zdr: true` and `data_collection: "deny"`, including on model-specific routing overrides. Mechanism and the `PRIVATE_ONLY` / `PRIVATE_TEXT` distinction: [SECURITY.md](SECURITY.md).
+OpenRouter uses `OPENROUTER_API_KEY` or a hidden prompt, and keeps an existing Pi credential. Venice uses the saved Pi key, `VENICE_API_KEY`, or a hidden prompt. Unrestricted and Private Only Venice inference keys are accepted; no admin key is required. Each install verifies authentication and registers only the catalog models described above. OpenRouter pins `zdr: true` and `data_collection: "deny"`, including on model-specific routing overrides. Security boundaries: [SECURITY.md](SECURITY.md).
 
 The installer writes exactly these locations:
 

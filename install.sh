@@ -13,8 +13,7 @@ Usage: bash install.sh [--provider openrouter|venice] [--codex-only] [--herdr] [
 
 Idempotent and sudo-free. Registers Cyberdeck with Claude Code and Codex (plus ChatGPT
 Desktop on macOS), installs or updates Pi to the latest release, and stores the selected
-provider key in Pi's auth store only when Pi has none. Venice requires an inference key
-restricted to private models.
+provider key in Pi's auth store only when Pi has none. Venice requires an inference key.
 Piped runs clone CYBERDECK_REPO_URL into CYBERDECK_HOME/app.
 --codex-only skips Claude installation and never invokes its CLI.
 --herdr installs the Pi coordinator extension; requires an existing Herdr installation.
@@ -464,7 +463,7 @@ CONFIG_PATH="$CYBERDECK_HOME/cyberdeck.config.json"
 
 if [ "$PROVIDER" = venice ]; then
 if [ "$DRY_RUN" -eq 1 ]; then
-  note "Pi: would verify the Venice inference key blocks anonymous text models, and register private tool-capable models plus the anonymized abliterated-large-v2 exception in $PI_MODELS"
+  note "Pi: would verify the Venice inference key and register private tool-capable models plus the anonymized abliterated-large-v2 exception in $PI_MODELS"
 else
   if [ -z "${VENICE_API_KEY:-}" ] && ! node -e 'const fs=require("node:fs");try {process.exit(JSON.parse(fs.readFileSync(process.argv[1],"utf8")).venice?.key ? 0 : 1)} catch {process.exit(1)}' "$PI_AGENT_DIR/auth.json"; then
     tty_usable || die "no terminal available for the Venice key prompt; set VENICE_API_KEY and re-run."
@@ -475,9 +474,9 @@ else
   fi
   VENICE_API_KEY="${VENICE_API_KEY:-}" PI_AGENT_DIR="$PI_AGENT_DIR" \
     node "$APP_DIR/bin/configure-venice.mjs" \
-    || die "Venice setup failed. Fix the error printed above and re-run with a valid VENICE_API_KEY restricted to private models; see install-helper.md."
+    || die "Venice setup failed. Fix the error printed above and re-run with a valid VENICE_API_KEY; see install-helper.md."
   unset VENICE_API_KEY
-  note "Pi: Venice rejects anonymous text models; private tool-capable models plus the anonymized abliterated-large-v2 exception registered in $PI_MODELS"
+  note "Pi: Venice credentials verified; private tool-capable models plus the anonymized abliterated-large-v2 exception registered in $PI_MODELS"
 fi
 fi
 

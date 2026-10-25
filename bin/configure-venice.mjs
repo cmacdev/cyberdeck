@@ -55,22 +55,7 @@ export async function configureVenice({ existingKey, config, auth, models, fetch
   }
   const provider = models.providers?.venice ?? {};
   if (provider.apiKey || provider.headers || provider.oauth || provider.modelOverrides || provider.models?.some((model) => model.headers || model.api || model.baseUrl)) {
-    throw new Error("Remove Venice auth, endpoint, or per-model overrides from models.json before installing; they can bypass the restricted key.");
-  }
-  const probe = catalog.find((model) => model.id.startsWith("gemini-") && model.model_spec?.privacy === "anonymized" && model.model_spec.offline === false);
-  if (!probe) throw new Error("Cannot verify Venice privacy restrictions: no anonymous probe model is available. Retry later.");
-  const response = await request(`${baseUrl}/chat/completions`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ model: probe.id, messages: [{ role: "user", content: "1" }], max_tokens: 1, venice_parameters: { enable_web_search: "off", disable_thinking: true } }),
-    signal: AbortSignal.timeout(20000),
-    redirect: "error",
-  });
-  const rejection = await response.json();
-  const privacyCode = [rejection.code, rejection.error_code, rejection.error?.code, rejection.error].includes("MODEL_PRIVACY_RESTRICTED");
-  const privacyMessage = typeof rejection.error === "string" && rejection.error.startsWith(`This API key is set to 'Private models only', but \`${probe.id}\` is an Anonymous model.`);
-  if (response.status < 400 || response.status >= 500 || !(privacyCode || privacyMessage)) {
-    throw new Error(`Venice privacy check did not confirm enforcement (HTTP ${response.status}). Set this inference key to Private Only in Venice API settings, then re-run. No task data was sent. Response: ${JSON.stringify(rejection).replaceAll(key, "[redacted]").slice(0, 600)}`);
+    throw new Error("Remove Venice auth, endpoint, or per-model overrides from models.json before installing; they can bypass the stored key.");
   }
   auth.venice = { type: "api_key", key };
   const thinkingById = new Map(declared.map(([, model]) => [model.providers.venice.id, model.providers.venice.thinking]));
