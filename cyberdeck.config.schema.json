@@ -253,6 +253,7 @@
       "additionalProperties": false,
       "required": [
         "tools",
+        "codemode",
         "promptPreamble"
       ],
       "properties": {
@@ -261,12 +262,23 @@
           "minItems": 1,
           "maxItems": 64,
           "uniqueItems": true,
-          "description": "Exact Pi built-in or extension tool names passed as --tools.",
+          "description": "Exact Pi built-in or extension tool names. When codemode is on or only, Cyberdeck also passes codemode on --tools.",
           "items": {
             "type": "string",
             "maxLength": 128,
-            "pattern": "^[A-Za-z0-9_.:-]+$"
+            "pattern": "^[A-Za-z0-9_.:-]+$",
+            "not": {
+              "const": "codemode"
+            }
           }
+        },
+        "codemode": {
+          "enum": [
+            "off",
+            "on",
+            "only"
+          ],
+          "description": "Pi's codemode tool: the model scripts these tools in a sandbox. on keeps them callable directly; only hides them behind codemode; off disables it."
         },
         "promptPreamble": {
           "type": "string",

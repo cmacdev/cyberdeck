@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { promisify } from "node:util";
-import { validateInput } from "./pi-runner.mjs";
+import { assertCodemodeExport, profileToolArguments, validateInput } from "./pi-runner.mjs";
 
 const execute = promisify(execFile);
 
@@ -118,17 +118,21 @@ export class HerdrWorkers {
       task: "Start an interactive worker.", working_directory: input.working_directory || this.cwd,
       kind: input.kind, model: input.model, thinking: input.thinking, implemented_by: input.implemented_by,
     }, this.config);
+    if (this.config.profiles[profile].codemode === "on" || this.config.profiles[profile].codemode === "only") {
+      await assertCodemodeExport(this.config.pi.command);
+    }
     const extension = path.join(this.agentDirectory, "extensions", "herdr-agent-state.ts");
     await access(extension);
     if ((await this.list()).some((item) => item.name === input.name)) throw new Error(`Worker ${input.name} already exists. Read it before sending a follow-up or closing it.`);
     const created = await this.call(["workspace", "create", "--cwd", resolved.workingDirectory, "--label", input.name,
       "--env", "CYBERDECK_WORKER=1", "--env", "PI_OFFLINE=1", "--env", "PI_TELEMETRY=0",
+      "--env", `CYBERDECK_CODEMODE=${this.config.profiles[profile].codemode}`,
       "--env", `PI_CODING_AGENT_DIR=${this.agentDirectory}`,
       "--env", `PATH=${path.dirname(this.config.pi.command)}:${this.environment.PATH}`, "--no-focus"], { signal });
     const pane = created.root_pane.pane_id;
     const args = [...this.config.pi.arguments, "--provider", this.config.provider,
       "--model", resolved.model, ...(resolved.thinking === null ? [] : ["--thinking", resolved.thinking]),
-      "--tools", this.config.profiles[profile].tools.join(","),
+      ...profileToolArguments(this.config.profiles[profile]),
       "--extension", extension, "--offline", "--name", input.name,
       "--session-dir", path.join(this.directory, "sessions", input.name),
       this.config.pi.trustProjectFiles ? "--approve" : "--no-approve"];

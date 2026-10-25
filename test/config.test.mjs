@@ -16,6 +16,9 @@ async function inspect(configPath, options) {
 
 const REFUSALS = [
   [{ mutate: (c) => c.profiles.research.tools.push("bash") }, /profiles\.research\.tools cannot include mutating Pi tools: bash/],
+  [{ mutate: (c) => (c.profiles.research.codemode = "always") }, /profiles\.research\.codemode must be one of: off, on, only/],
+  [{ mutate: (c) => delete c.profiles.implementation.codemode }, /profiles\.implementation\.codemode must be one of/],
+  [{ mutate: (c) => c.profiles.research.tools.push("codemode") }, /profiles\.research\.tools cannot list codemode; set profiles\.research\.codemode instead/],
   [{ workspaceRoots: ["/"] }, /must not be the filesystem root or the home directory/],
   [{ workspaceRoots: [os.homedir()] }, /must not be the filesystem root or the home directory/],
   [{ provider: "openai" }, /provider must be "openrouter" or "venice"/],
