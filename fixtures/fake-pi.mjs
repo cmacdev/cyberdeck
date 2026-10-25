@@ -73,6 +73,9 @@ if (has("FAKE_STDERR_ONLY")) {
   } else if (has("FAKE_OLD_PI")) {
     process.stderr.write("Failed to load extension: createCodemodeExtension is not a function\n");
     process.exitCode = 1;
+  } else if (has("FAKE_UNSUPPORTED_MCP_FLAG")) {
+    process.stderr.write("Error: Unknown option: --no-mcp\n");
+    process.exitCode = 1;
   } else if (has("FAKE_LINGER") || has("FAKE_HOLD_PIPE")) {
     messageEnd([{ type: "text", text: "lingered" }]);
     const descendant = spawn(process.execPath, ["-e", `setTimeout(() => {}, ${has("FAKE_HOLD_PIPE") ? 30000 : 1500})`], {

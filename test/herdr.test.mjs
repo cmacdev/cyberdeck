@@ -84,7 +84,7 @@ test("a codemode worker loads Cyberdeck's extension with the profile's mode", as
   assert.ok(args.includes("--no-mcp"));
 });
 
-test("a codemode worker refuses a Pi that lacks createCodemodeExtension", async (t) => {
+test("a codemode worker refuses Pi 1.0.3 even when createCodemodeExtension is exported", async (t) => {
   const { manager, calls, fixture } = await setup(t, {
     profiles: {
       research: { tools: ["read"], codemode: "only", promptPreamble: "" },
@@ -93,8 +93,8 @@ test("a codemode worker refuses a Pi that lacks createCodemodeExtension", async 
   });
   const root = path.join(fixture.root, "old-pi");
   await mkdir(path.join(root, "dist"), { recursive: true });
-  await writeFile(path.join(root, "package.json"), '{"name":"@earendil-works/pi-coding-agent"}\n');
-  await writeFile(path.join(root, "dist", "index.js"), "export {}\n");
+  await writeFile(path.join(root, "package.json"), '{"name":"@earendil-works/pi-coding-agent","version":"1.0.3"}\n');
+  await writeFile(path.join(root, "dist", "index.js"), "export { createCodemodeExtension }\n");
   const command = path.join(root, "pi");
   await writeFile(command, "");
   manager.config.pi.command = command;

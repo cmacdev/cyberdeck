@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
-import { createWriteStream } from "node:fs";
-import { mkdir, readFile, realpath, stat, writeFile } from "node:fs/promises";
+import { constants, createWriteStream } from "node:fs";
+import { access, mkdir, readFile, realpath, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { finished } from "node:stream/promises";
@@ -18,7 +18,7 @@ import {
 const CODEMODE_EXTENSION = fileURLToPath(new URL("../pi/codemode.js", import.meta.url));
 const CODEMODE_ENABLED = new Set(["on", "only"]);
 const PI_CODEMODE_UPGRADE =
-  "Pi does not export createCodemodeExtension. Upgrade Pi to 1.0.4 or newer ('npm install -g @earendil-works/pi-coding-agent@latest'), then re-run.";
+  "Pi codemode requires createCodemodeExtension and --no-mcp. Upgrade Pi to 1.0.4 or newer ('npm install -g @earendil-works/pi-coding-agent@latest'), then re-run.";
 
 export function profileToolArguments(profile) {
   if (!CODEMODE_ENABLED.has(profile.codemode)) return ["--tools", profile.tools.join(",")];
@@ -27,11 +27,18 @@ export function profileToolArguments(profile) {
 
 async function piPackageRoot(command) {
   let current;
-  try {
-    current = await realpath(command);
-  } catch {
-    return null;
+  const searchPath = !command.includes(path.sep);
+  const candidates = searchPath
+    ? (process.env.PATH ?? "").split(path.delimiter).map((directory) => path.resolve(directory, command))
+    : [command];
+  for (const candidate of candidates) {
+    try {
+      if (searchPath) await access(candidate, constants.X_OK);
+      current = await realpath(candidate);
+      break;
+    } catch {}
   }
+  if (!current) return null;
   for (let depth = 0; depth < 8 && current !== path.dirname(current); depth += 1) {
     try {
       const manifest = JSON.parse(await readFile(path.join(current, "package.json"), "utf8"));
@@ -42,11 +49,20 @@ async function piPackageRoot(command) {
   return null;
 }
 
+function supportsCodemode(version) {
+  const match = /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/.exec(typeof version === "string" ? version : "");
+  if (!match) return false;
+  const [major, minor, patch] = match.slice(1, 4).map(Number);
+  return major > 1 || (major === 1 && (minor > 0 || patch > 4 || (patch === 4 && !match[4])));
+}
+
 export async function assertCodemodeExport(command) {
   const root = await piPackageRoot(command);
   if (!root) return;
   let source;
   try {
+    const manifest = JSON.parse(await readFile(path.join(root, "package.json"), "utf8"));
+    if (!supportsCodemode(manifest.version)) throw new InputError(PI_CODEMODE_UPGRADE);
     source = await readFile(path.join(root, "dist", "index.js"), "utf8");
   } catch {
     throw new InputError(PI_CODEMODE_UPGRADE);
@@ -55,7 +71,8 @@ export async function assertCodemodeExport(command) {
 }
 
 function codemodeStartupError(stderr) {
-  return typeof stderr === "string" && stderr.includes("createCodemodeExtension") ? PI_CODEMODE_UPGRADE : null;
+  return typeof stderr === "string" && (stderr.includes("createCodemodeExtension") || /Unknown options?:[^\n]*--no-mcp/.test(stderr))
+    ? PI_CODEMODE_UPGRADE : null;
 }
 
 const INPUT_KEYS = new Set([

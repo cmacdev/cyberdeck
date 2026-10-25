@@ -549,7 +549,7 @@ test("an older Pi is rejected before a codemode run starts", async (t) => {
   const fixture = await makeFixture(t);
   const root = path.join(fixture.root, "old-pi");
   await mkdir(path.join(root, "dist"), { recursive: true });
-  await writeFile(path.join(root, "package.json"), '{"name":"@earendil-works/pi-coding-agent"}\n');
+  await writeFile(path.join(root, "package.json"), '{"name":"@earendil-works/pi-coding-agent","version":"1.0.4"}\n');
   await writeFile(path.join(root, "dist", "index.js"), "export {}\n");
   const command = path.join(root, "pi");
   await writeFile(command, "");
@@ -574,11 +574,51 @@ test("a current Pi package is accepted and a non-Pi command is not checked", asy
   await assert.doesNotReject(assertCodemodeExport(process.execPath));
   const root = path.join(fixture.root, "current-pi");
   await mkdir(path.join(root, "dist"), { recursive: true });
-  await writeFile(path.join(root, "package.json"), '{"name":"@earendil-works/pi-coding-agent"}\n');
+  await writeFile(path.join(root, "package.json"), '{"name":"@earendil-works/pi-coding-agent","version":"1.0.4"}\n');
   await writeFile(path.join(root, "dist", "index.js"), "export { createCodemodeExtension }\n");
   await assert.doesNotReject(assertCodemodeExport(path.join(root, "pi")));
   await writeFile(path.join(root, "pi"), "");
   await assert.doesNotReject(assertCodemodeExport(path.join(root, "pi")));
+});
+
+test("codemode requires Pi 1.0.4 even when the factory is exported", async (t) => {
+  const fixture = await makeFixture(t);
+  const root = path.join(fixture.root, "pi-package");
+  await mkdir(path.join(root, "dist"), { recursive: true });
+  await writeFile(path.join(root, "dist", "index.js"), "export { createCodemodeExtension }\n");
+  const command = path.join(root, "pi");
+  await writeFile(command, "");
+  for (const version of ["1.0.3", "1.0.4-rc.1", "0.99.0", "invalid", undefined]) {
+    await writeFile(path.join(root, "package.json"), JSON.stringify({ name: "@earendil-works/pi-coding-agent", version }));
+    await assert.rejects(assertCodemodeExport(command), /Upgrade Pi to 1\.0\.4 or newer/, String(version));
+  }
+  for (const version of ["1.0.4", "1.0.4+build.1", "1.0.5", "1.4.0", "2.0.0"]) {
+    await writeFile(path.join(root, "package.json"), JSON.stringify({ name: "@earendil-works/pi-coding-agent", version }));
+    await assert.doesNotReject(assertCodemodeExport(command), version);
+  }
+});
+
+test("Pi 1.0.3 found on PATH is rejected before either profile starts", async (t) => {
+  const fixture = await makeFixture(t);
+  const root = path.join(fixture.root, "pi-package");
+  await mkdir(path.join(root, "dist"), { recursive: true });
+  await writeFile(path.join(root, "package.json"), '{"name":"@earendil-works/pi-coding-agent","version":"1.0.3"}\n');
+  await writeFile(path.join(root, "dist", "index.js"), "export { createCodemodeExtension }\n");
+  await writeFile(path.join(root, "pi"), "#!/bin/sh\nexit 99\n", { mode: 0o755 });
+  const configPath = await fixture.writeConfig("config", {
+    pi: { command: "pi", arguments: [] },
+    profiles: {
+      research: { tools: RESEARCH_TOOLS, codemode: "only", promptPreamble: "" },
+      implementation: { tools: ["read", "bash", "edit", "write"], codemode: "on", promptPreamble: "" },
+    },
+  });
+  const client = startServer(t, configPath, { cwd: fixture.workspace, env: { PATH: `${root}${path.delimiter}${process.env.PATH}` } });
+  for (const tool of ["research", "implement"]) {
+    const result = await call(client, tool, callArguments(fixture));
+    assert.equal(result.structuredContent.status, "rejected");
+    assert.match(result.structuredContent.error, /npm install -g @earendil-works\/pi-coding-agent@latest/);
+  }
+  await assert.rejects(readdir(fixture.artifactDirectory));
 });
 
 test("a Pi that fails to load codemode is told to upgrade", async (t) => {
@@ -588,9 +628,11 @@ test("a Pi that fails to load codemode is told to upgrade", async (t) => {
       implementation: { tools: ["read", "grep", "find", "ls", "bash", "edit", "write"], codemode: "on", promptPreamble: "" },
     },
   });
-  const result = await call(client, "research", callArguments(fixture, { task: "FAKE_OLD_PI" }));
-  assert.equal(result.structuredContent.status, "failed");
-  assert.match(result.structuredContent.error, /npm install -g @earendil-works\/pi-coding-agent@latest/);
+  for (const task of ["FAKE_OLD_PI", "FAKE_UNSUPPORTED_MCP_FLAG"]) {
+    const result = await call(client, "research", callArguments(fixture, { task }));
+    assert.equal(result.structuredContent.status, "failed");
+    assert.match(result.structuredContent.error, /npm install -g @earendil-works\/pi-coding-agent@latest/);
+  }
 });
 
 test("the shipped policy enables codemode for both tools", async () => {
