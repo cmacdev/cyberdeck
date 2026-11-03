@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import { configureOpenRouter } from "../bin/configure-openrouter.mjs";
-import { configureVenice, VENICE_ANONYMIZED_EXCEPTION_ID } from "../bin/configure-venice.mjs";
+import { configureVenice } from "../bin/configure-venice.mjs";
 import { inferenceKey, veniceFixture, veniceModelIds } from "../fixtures/venice-api.mjs";
 
 const config = JSON.parse(await readFile(new URL("../cyberdeck.config.json", import.meta.url), "utf8"));
@@ -33,21 +33,30 @@ test("Venice reuses stored inference credentials and refreshes only model metada
   assert.deepEqual(again, result);
 });
 
-test("Venice fails closed on anonymous or unverified catalog models", async () => {
-  for (const modelPrivacy of ["anonymized", "missing", "unknown"]) {
-    const fixture = veniceFixture({ modelPrivacy });
-    await assert.rejects(setup(fixture), /not private/);
-    assert.equal(fixture.calls.length, 2);
-  }
+test("Venice registers every text model Venice offers", async () => {
+  const result = await setup(veniceFixture({
+    modelPrivacy: "anonymized", offline: true, supportsFunctionCalling: false,
+    extraModels: [{ id: "extra-text", thinking: ["low", "high"] }, { id: "" }, { id: "extra-text" }],
+  }), { models: { providers: { venice: { models: [{ id: "retired-text" }] } } } });
+  assert.deepEqual(result.models.providers.venice.models.map((model) => model.id), [...veniceModelIds, "extra-text"]);
+  const extra = result.models.providers.venice.models.at(-1);
+  assert.deepEqual(extra.thinkingLevelMap, { off: null, minimal: null, low: "low", medium: null, high: "high", xhigh: null, max: null });
+  assert.equal(extra.samplingParams.venice_parameters.enable_web_search, "off");
+  const refreshed = await setup(veniceFixture(), { auth: result.auth, models: result.models, existingKey: undefined });
+  assert.deepEqual(refreshed.models.providers.venice.models.map((model) => model.id), veniceModelIds);
 });
 
-test("Venice allows only the abliterated large v2 model to be anonymized", async () => {
-  const id = VENICE_ANONYMIZED_EXCEPTION_ID;
-  assert.equal(config.models["abliterated-large-v2"].providers.venice.id, id);
-  const allowed = await setup(veniceFixture({ modelPrivacyById: { [id]: "anonymized" } }));
-  assert.ok(allowed.models.providers.venice.models.some((model) => model.id === id));
-  await assert.rejects(setup(veniceFixture({ modelPrivacyById: { "grok-4-7": "anonymized" } })), /Venice model grok-4-7 is unavailable, not private/);
-  await assert.rejects(setup(veniceFixture({ modelPrivacyById: { [id]: "unknown" } })), new RegExp(`Venice model ${id} is unavailable, not private`));
+test("Venice still requires configured catalog models to be offered", async () => {
+  for (const modelPrivacy of ["private", "anonymized", "missing", "unknown"]) {
+    const result = await setup(veniceFixture({ modelPrivacy, offline: true, supportsFunctionCalling: false }));
+    assert.deepEqual(result.models.providers.venice.models.map((model) => model.id), veniceModelIds);
+  }
+  const missing = structuredClone(config);
+  missing.models["grok-4-7"].providers.venice.id = "not-a-venice-model";
+  await assert.rejects(
+    configureVenice({ existingKey: inferenceKey, config: missing, auth: {}, models: {}, fetch: veniceFixture().fetch }),
+    /Venice model not-a-venice-model is unavailable\. Update or remove its models entry in cyberdeck\.config\.json\./,
+  );
 });
 
 test("Venice rejects failed authentication and catalog requests without exposing secrets", async () => {

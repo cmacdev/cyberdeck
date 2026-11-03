@@ -152,11 +152,15 @@ test("Venice install replaces a stale policy and preserves provider credentials"
   assert.deepEqual(switched.models, shipped.models);
   assert.deepEqual(switched.profiles, shipped.profiles);
   assert.deepEqual(JSON.parse(await readFile(authPath, "utf8")), auth);
+  await writeFile(preload, `import { veniceFixture } from ${JSON.stringify(path.join(packageDirectory, "fixtures/venice-api.mjs"))}; globalThis.fetch = veniceFixture({ extraModels: [{ id: "extra-text" }] }).fetch;\n`);
   await execFileAsync("bash", ["install.sh", "--provider", "venice"], { cwd: packageDirectory, env });
   assert.equal(JSON.parse(await readFile(configPath, "utf8")).provider, "venice");
   const models = JSON.parse(await readFile(path.join(agentDirectory, "models.json"), "utf8"));
   assert.equal(models.providers.openrouter.compat.openRouterRouting.zdr, true);
-  assert.equal(models.providers.venice.models.length, Object.values(shipped.models).filter((model) => model.providers.venice).length);
+  assert.deepEqual(
+    models.providers.venice.models.map((model) => model.id),
+    [...Object.values(shipped.models).flatMap((model) => model.providers.venice?.id ?? []), "extra-text"],
+  );
 });
 
 test("OpenRouter model and payload overrides cannot weaken the installer ZDR pin", async (t) => {
