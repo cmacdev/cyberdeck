@@ -111,6 +111,17 @@ test("the installer installs the latest Pi and does not pin a version", async ()
   assert.equal(helper.includes("tested version"), false);
 });
 
+test("the installer installs the latest Herdr CLI and app and does not require a prior install", async () => {
+  const installer = await read("install.sh");
+  const readme = await read("README.md");
+  const helper = await read("install-helper.md");
+  assert.match(installer, /https:\/\/herdr\.dev\/install\.sh/);
+  assert.match(installer, /https:\/\/releases\.herdr\.dev\/app\/install\.sh/);
+  assert.equal(installer.includes("Herdr is required for --herdr"), false);
+  assert.match(readme, /latest Herdr CLI/);
+  assert.equal(helper.includes("Install Herdr from herdr.dev, then re-run"), false);
+});
+
 test("the deck skill names exactly the shipped kinds", async () => {
   const skill = await read("skills/deck/SKILL.md");
   const shipped = JSON.parse(await read("cyberdeck.config.json"));

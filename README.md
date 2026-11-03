@@ -19,7 +19,7 @@
 
 This is a cyberdeck that jacks your daily driver into the agent matrix. The initial goal is for the deck to help you spend less on tokens by using the right models for each job. It packages an opinionated protocol that makes it easy for your primary agent to make the right decisions (so you do not have to think about them).
 
-Run install, **choose [OpenRouter](https://openrouter.ai/) or [Venice](https://venice.ai/)**, and tell Claude or ChatGPT to use `/deck` for subagents. Both require an API key. It should work with any harness including Pi (which is what the deck installs and uses itself).
+Run install, **choose [OpenRouter](https://openrouter.ai/) or [Venice](https://venice.ai/)**, and tell Claude or ChatGPT to use `/deck` for subagents. Both require an API key. It should work with any harness including Pi (which is what the deck installs and uses itself). The installer also installs or updates Herdr: the latest CLI and the desktop app.
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/cmacdev/cyberdeck/master/install.sh | bash
@@ -34,7 +34,7 @@ Cyberdeck installs enforce ZDR and are otherwise conscious of security and priva
 
 # Agents
 
-Cyberdeck is a local stdio MCP server with no npm dependencies. The caller decides when to delegate; Cyberdeck enforces read-only `research` versus write-capable `implement`, catalog models and their thinking levels, workspace roots, limits, and artifacts. MCP calls spawn a stateless Pi process; that Pi is the engine, not a client. Herdr coordinators are persistent Pi sessions that manage workers. The installer registers Claude Code and Codex CLI; on macOS it also prepares ChatGPT Desktop. Any MCP client that can launch a local stdio server can use it.
+Cyberdeck is a local stdio MCP server with no npm dependencies. The caller decides when to delegate; Cyberdeck enforces read-only `research` versus write-capable `implement`, catalog models and their thinking levels, workspace roots, limits, and artifacts. MCP calls spawn a stateless Pi process; that Pi is the engine, not a client. Herdr coordinators are persistent Pi sessions that manage workers. The installer registers Claude Code and Codex CLI; on macOS it also prepares ChatGPT Desktop. Every install installs or updates the latest Herdr CLI and desktop app. Any MCP client that can launch a local stdio server can use it.
 
 ## Tools and models
 
@@ -73,17 +73,17 @@ An optional `kind` sets the default model and appends its preamble. Kinds are pr
 
 The task, constraints, attached `context_files`, and whatever enabled Pi tools read go to the selected provider. Cyberdeck makes no network calls. Each MCP run sets `PI_SKIP_VERSION_CHECK=1` and `PI_TELEMETRY=0`. Pi's own tools still reach the network when the task does, including `bash` under `implement`.
 
-The installer contacts github.com (clone), the npm registry (Pi, on every install), and Venice's API when configuring Venice for authentication and model metadata. Inference keys live in Pi's auth store. Provider ZDR does not cover local artifacts or external tools.
+The installer contacts github.com (clone), the npm registry (Pi, on every install), herdr.dev (Herdr CLI, on every install), releases.herdr.dev (Herdr app, when a build is published for this system), and Venice's API when configuring Venice for authentication and model metadata. Inference keys live in Pi's auth store. Provider ZDR does not cover local artifacts or external tools.
 
 Enforced and unenforced boundaries: [SECURITY.md](SECURITY.md). Read it before unattended `implement`.
 
 ## Requirements
 
-macOS or Linux, Node.js 20 or newer, git for a piped install, and a provider API key. No Windows support; open an issue if you want it. Every install runs `npm install -g` for the latest Pi, including when `pi` is already present. There is no pin. npm must be installed and its global directory writable, including for `--dry-run`. `--uninstall` leaves Pi. Everything else is zero-dependency Node.
+macOS or Linux, Node.js 20 or newer, git for a piped install, curl, and a provider API key. No Windows support; open an issue if you want it. Every install runs `npm install -g` for the latest Pi, including when `pi` is already present, and installs or updates the latest Herdr CLI and the Herdr app, including when they are already present. There is no pin. npm must be installed and its global directory writable, including for `--dry-run`. curl is required, including for `--dry-run`. `--uninstall` leaves Pi and Herdr. Everything else is zero-dependency Node.
 
 ## Install
 
-Run the command at the top. From a checkout: `bash install.sh [--provider openrouter|venice] [--codex-only] [--herdr] [--dry-run] [--uninstall]`. Piped dry run: append `-s -- --dry-run` to the command at the top. It prints the plan and does not perform the writes below; the `pi` and `claude` probes may still create those tools' own state files. Re-running is the update. `--uninstall` removes Cyberdeck and leaves Pi, its credentials, and provider settings. The installer is idempotent and never uses sudo.
+Run the command at the top. From a checkout: `bash install.sh [--provider openrouter|venice] [--codex-only] [--herdr] [--dry-run] [--uninstall]`. Piped dry run: append `-s -- --dry-run` to the command at the top. It prints the plan and does not perform the writes below; the `pi` and `claude` probes may still create those tools' own state files. Re-running is the update. `--uninstall` removes Cyberdeck and leaves Pi, its credentials, provider settings, and Herdr. The installer is idempotent and never uses sudo.
 
 Interactive installs ask for a provider, defaulting to the installed choice or OpenRouter. `--provider` skips the prompt. `--codex-only` installs and uninstalls without invoking Claude's CLI.
 
@@ -103,6 +103,8 @@ The installer writes exactly these locations:
 | `~/.pi/agent/auth.json` | Selected provider's inference key; unrelated credentials preserved |
 | `~/.pi/agent/models.json` | OpenRouter ZDR routing and catalog thinking levels on every install; Venice's endpoint and configured model metadata when selected; other providers preserved |
 | `~/.pi/agent/extensions/cyberdeck-coordinator`, `~/.pi/agent/extensions/herdr-agent-state.ts` | With `--herdr`: managed coordinator loader and Herdr's official Pi state extension |
+| `~/.local/bin/herdr` | Latest Herdr CLI, installed or updated on every install; `--uninstall` leaves it |
+| `~/Applications/Herdr.app`, `~/.local/share/herdr-app`, `~/.local/bin/herdr-app` | Herdr app, installed or updated when published for this system; the app installer also adds `herdr-core` and `hc` when core is absent. `--uninstall` leaves them |
 | npm's global directory (`npm prefix -g`) | Latest Pi, installed or updated on every install; `--uninstall` leaves it |
 
 Stops, manual setup, update, and uninstall: [install-helper.md](install-helper.md). Install and uninstall do not change Pi's interactive settings; each run supplies its own model, thinking, and telemetry settings. Restart the client after a first install so it spawns the server. Clients bound to `~/.cyberdeck/cyberdeck.config.json` pick up a reinstall's replaced policy without a restart. Invoke `/deck …` (Claude Code), `$deck …` (Codex CLI), or `@deck …` (ChatGPT Desktop). The skill chooses `research` or `implement` and a model, and calls Cyberdeck with the absolute project directory.
@@ -111,7 +113,7 @@ Stops, manual setup, update, and uninstall: [install-helper.md](install-helper.m
 
 ### Pi coordinators in Herdr
 
-`bash install.sh --herdr` (add `--codex-only` to skip Claude) requires Herdr already installed. It adds Herdr's official Pi state extension and Cyberdeck's managed coordinator, and updates that coordinator on reinstall without touching Pi settings. Open Herdr in a project and start Pi inside it, for example `pi --provider venice --model grok-4-7`, or any model from the configured provider. Started outside Herdr, the coordinator stays inactive. Use `/reload` after installation.
+`bash install.sh --herdr` (add `--codex-only` to skip Claude) adds Herdr's official Pi state extension and Cyberdeck's managed coordinator, and updates that coordinator on reinstall without touching Pi settings. Every install already installed or updated the latest Herdr CLI and, where published, the Herdr app. The app and the CLI do not share sessions; the coordinator uses the CLI. Open Herdr in a project and start Pi inside it, for example `pi --provider venice --model grok-4-7`, or any model from the configured provider. Started outside Herdr, the coordinator stays inactive. Use `/reload` after installation.
 
 Each interactive session gets a `workers` tool. Orchestration instructions and the installed model catalog are supplied every turn, without relying on skill discovery. No `/deck` invocation. Workers are persistent Pi sessions on a separate named Herdr server per coordinator, hidden from the visible Agents list. Another primary session gets its own server. One-shot delegation remains the Deck MCP tools. Models and thinking come from `~/.cyberdeck/cyberdeck.config.json`, not from the primary's model. The coordinator is the router: it chooses the model and thinking for each task and replaces a failing model itself, accounting for partial work before retrying. Cyberdeck enforces the configured permissions, allowed models, and limits; it does not escalate models automatically.
 
@@ -119,7 +121,7 @@ Actions are `start`, `send`, `read`, `list`, `interrupt`, and `close`. `send` wa
 
 Worker sessions are local state, outside inference ZDR, and not an OS sandbox. Sockets live in Herdr's named-session directory. Transcripts live under `artifactDirectory/workers`. Guardrails only catch common direct pane and agent commands. `/deck-guardrails off` is for intentional manual terminal setup; `on` restores the checks. Do not disable them to bypass an error.
 
-If Pi was started with `--no-extensions`, also pass `--extension` for both `~/.pi/agent/extensions/herdr-agent-state.ts` and `~/.pi/agent/extensions/cyberdeck-coordinator/index.js`. The footer names the worker server: `herdr --session <name>`, `herdr session stop <name>`. Detaching the primary terminal does not stop workers. Close finished workers with the tool. If that server stops, `/reload` before starting or reconnecting. Uninstall removes only the managed coordinator; stop worker servers first. Herdr and its Pi state extension stay. See [install-helper.md](install-helper.md#uninstall).
+If Pi was started with `--no-extensions`, also pass `--extension` for both `~/.pi/agent/extensions/herdr-agent-state.ts` and `~/.pi/agent/extensions/cyberdeck-coordinator/index.js`. The footer names the worker server: `herdr --session <name>`, `herdr session stop <name>`. Detaching the primary terminal does not stop workers. Close finished workers with the tool. If that server stops, `/reload` before starting or reconnecting. Uninstall removes only the managed coordinator; stop worker servers first. Herdr's CLI, app, and Pi state extension stay. See [install-helper.md](install-helper.md#uninstall).
 
 ### Policy
 

@@ -26,11 +26,17 @@ async function withNpmStub(options = {}) {
   await mkdir(prefixBin, { recursive: true });
   await mkdir(path.join(stub, "root"), { recursive: true });
   const trace = env.CYBERDECK_NPM_TRACE || path.join(stub, "npm-calls");
+  const curlTrace = env.CYBERDECK_CURL_TRACE || path.join(stub, "curl-calls");
   await writeFile(
     path.join(stub, "npm"),
     `#!/bin/sh\nprintf '%s\\n' "$*" >> ${JSON.stringify(trace)}\ncase "$1" in\n  root) printf '%s\\n' ${JSON.stringify(path.join(stub, "root"))} ;;\n  prefix) printf '%s\\n' ${JSON.stringify(prefix)} ;;\nesac\nexit 0\n`,
   );
+  await writeFile(
+    path.join(stub, "curl"),
+    `#!/bin/sh\nprintf '%s\\n' "$*" >> ${JSON.stringify(curlTrace)}\nexit 0\n`,
+  );
   await chmod(path.join(stub, "npm"), 0o755);
+  await chmod(path.join(stub, "curl"), 0o755);
   return { ...options, env: { ...env, PATH: `${stub}:${prefixBin}:${env.PATH ?? ""}` } };
 }
 
@@ -741,6 +747,79 @@ test("Herdr opt-in installs and updates only its managed coordinator and preserv
   await execFileAsync("bash", ["install.sh", "--codex-only", "--uninstall"], { cwd: packageDirectory, env: uninstallEnv });
   assert.equal(existsSync(target), false);
   assert.equal(await readFile(path.join(agent, "settings.json"), "utf8"), settings);
+});
+
+test("every install fetches the latest Herdr CLI and app even when both are already present", async (t) => {
+  const fixture = await makeFixture(t);
+  const bin = path.join(fixture.root, "bin");
+  await mkdir(bin);
+  const trace = path.join(fixture.root, "curl-calls");
+  await writeFile(path.join(bin, "uname"), "#!/bin/sh\ncase \"$1\" in -m) echo aarch64 ;; *) echo Linux ;; esac\n");
+  await writeFile(path.join(bin, "herdr"), "#!/bin/sh\nexit 0\n");
+  await writeFile(path.join(bin, "pi"), "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo 'pi 0.84.2'; else echo ready; fi\n");
+  await chmod(path.join(bin, "uname"), 0o755);
+  await chmod(path.join(bin, "herdr"), 0o755);
+  await chmod(path.join(bin, "pi"), 0o755);
+  await mkdir(path.join(fixture.root, ".local/share/herdr-app"), { recursive: true });
+  const env = {
+    ...process.env,
+    HOME: fixture.root,
+    CYBERDECK_HOME: path.join(fixture.root, ".cyberdeck"),
+    CYBERDECK_CURL_TRACE: trace,
+    PATH: `${bin}:${testSystemPath}`,
+  };
+  const dry = await execFileAsync("bash", ["install.sh", "--dry-run", "--codex-only", "--provider", "openrouter"], {
+    cwd: packageDirectory,
+    env,
+  });
+  assert.equal(dry.stderr, "");
+  assert.match(dry.stdout, /would run: curl -fsSL https:\/\/herdr\.dev\/install\.sh \| sh/);
+  assert.match(dry.stdout, /would run: curl -fsSL https:\/\/releases\.herdr\.dev\/app\/install\.sh \| sh/);
+  assert.equal(existsSync(trace), false);
+  const installed = await execFileAsync("bash", ["install.sh", "--codex-only", "--provider", "openrouter"], {
+    cwd: packageDirectory,
+    env,
+  });
+  assert.equal(installed.stderr, "");
+  const calls = await readFile(trace, "utf8");
+  assert.match(calls, /https:\/\/herdr\.dev\/install\.sh/);
+  assert.match(calls, /https:\/\/releases\.herdr\.dev\/app\/install\.sh/);
+});
+
+test("an Intel Mac install fetches the Herdr CLI and skips the unpublished app", async (t) => {
+  const fixture = await makeFixture(t);
+  const bin = path.join(fixture.root, "bin");
+  await mkdir(bin);
+  const trace = path.join(fixture.root, "curl-calls");
+  await writeFile(path.join(bin, "uname"), "#!/bin/sh\ncase \"$1\" in -m) echo x86_64 ;; *) echo Darwin ;; esac\n");
+  await writeFile(path.join(bin, "sysctl"), "#!/bin/sh\necho 0\n");
+  await writeFile(path.join(bin, "pi"), "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo 'pi 0.84.2'; else echo ready; fi\n");
+  await chmod(path.join(bin, "uname"), 0o755);
+  await chmod(path.join(bin, "sysctl"), 0o755);
+  await chmod(path.join(bin, "pi"), 0o755);
+  const env = {
+    ...process.env,
+    HOME: fixture.root,
+    CYBERDECK_HOME: path.join(fixture.root, ".cyberdeck"),
+    CYBERDECK_CURL_TRACE: trace,
+    PATH: `${bin}:${testSystemPath}`,
+  };
+  const dry = await execFileAsync("bash", ["install.sh", "--dry-run", "--codex-only", "--provider", "openrouter"], {
+    cwd: packageDirectory,
+    env,
+  });
+  assert.equal(dry.stderr, "");
+  assert.match(dry.stdout, /would run: curl -fsSL https:\/\/herdr\.dev\/install\.sh \| sh/);
+  assert.match(dry.stdout, /Herdr app is not published for this system/);
+  assert.doesNotMatch(dry.stdout, /releases\.herdr\.dev\/app\/install\.sh/);
+  const installed = await execFileAsync("bash", ["install.sh", "--codex-only", "--provider", "openrouter"], {
+    cwd: packageDirectory,
+    env,
+  });
+  assert.equal(installed.stderr, "");
+  const calls = await readFile(trace, "utf8");
+  assert.match(calls, /https:\/\/herdr\.dev\/install\.sh/);
+  assert.doesNotMatch(calls, /releases\.herdr\.dev\/app\/install\.sh/);
 });
 
 test("every install updates Pi to the npm latest tag, including an existing Pi", async (t) => {
