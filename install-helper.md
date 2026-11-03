@@ -21,7 +21,7 @@ Every stop prints its cause; apply the fix and re-run the same command.
 | `no terminal available for the API key prompt` | Run in an interactive terminal (the prompt reads `/dev/tty`), or set `OPENROUTER_API_KEY` for the installer. Agents: hand this step to the user; never ask for or handle the key. |
 | `unknown provider` | Re-run with `--provider openrouter` or `--provider venice`. |
 | `no terminal available for the Venice key prompt` / `empty Venice key` | Set `VENICE_API_KEY` or run interactively and enter an unrestricted or Private Only Venice inference key. |
-| `Venice setup failed` | Fix the reported API, model, or JSON error. Use a valid unrestricted or Private Only Venice inference key. The installer registers every text model Venice offers. A configured catalog model must still be in that list, and its listed thinking levels must be ones that model accepts. The error names the levels Venice accepts for the model to list instead, or `[]` for no thinking control. Remove conflicting Venice auth/endpoint overrides from `models.json`. |
+| `Venice setup failed` | Fix the reported API, model, or JSON error. Use a valid unrestricted or Private Only Venice inference key. The installer requires private, available, tool-capable catalog models that accept every listed thinking level. The only anonymized catalog id allowed is `abliteration-abliterated-model-large-v2`; do not remove it for being anonymized. Other catalog models must be private. The error names the levels Venice accepts for the model to list instead, or `[]` for no thinking control. Remove conflicting Venice auth/endpoint overrides from `models.json`. |
 | `OpenRouter setup failed` | Make `~/.pi/agent/models.json` valid JSON (Pi accepts comments there; this installer does not) and writable, then re-run. |
 | `empty API key` / `Pi does not report OpenRouter credentials as ready` | Nothing was stored, or Pi rejected the key. Check `pi auth check --provider openrouter`; re-run to be prompted again. |
 | `pi was installed or detected but cannot now be found on PATH` | Add npm's global `bin` directory to the current shell's `PATH` and re-run. |
@@ -98,8 +98,8 @@ Machine paths are rewritten: the Pi executable, Pi state directory, artifact dir
 schema path. Models, kinds, limits, workspace roots, and Pi arguments are not preserved.
 Unrelated Pi settings are. The selected provider's controls are reapplied before that replacement;
 a failed Venice check leaves the previous policy in place. Venice reuses its saved inference key,
-replaces the Venice model list with every text model Venice offers, and refreshes model
-metadata. Every install runs `npm install -g @earendil-works/pi-coding-agent@latest`, including
+checks catalog model privacy against the published policy, and replaces the Venice model
+list with every online Venice text model. Every install runs `npm install -g @earendil-works/pi-coding-agent@latest`, including
 when Pi is already present. `--dry-run` does not install, but still requires npm and a writable
 global directory. There is no pin and no flag to keep an older Pi. A prerelease can move back to
 the latest stable tag. Pi's auth store and other settings are not. `--uninstall` still leaves Pi.

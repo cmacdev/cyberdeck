@@ -463,7 +463,7 @@ CONFIG_PATH="$CYBERDECK_HOME/cyberdeck.config.json"
 
 if [ "$PROVIDER" = venice ]; then
 if [ "$DRY_RUN" -eq 1 ]; then
-  note "Pi: would verify the Venice inference key and register every text model Venice offers in $PI_MODELS"
+  note "Pi: would verify the Venice inference key, check catalog models, and register every online Venice text model in $PI_MODELS"
 else
   if [ -z "${VENICE_API_KEY:-}" ] && ! node -e 'const fs=require("node:fs");try {process.exit(JSON.parse(fs.readFileSync(process.argv[1],"utf8")).venice?.key ? 0 : 1)} catch {process.exit(1)}' "$PI_AGENT_DIR/auth.json"; then
     tty_usable || die "no terminal available for the Venice key prompt; set VENICE_API_KEY and re-run."
@@ -476,7 +476,7 @@ else
     node "$APP_DIR/bin/configure-venice.mjs" \
     || die "Venice setup failed. Fix the error printed above and re-run with a valid VENICE_API_KEY; see install-helper.md."
   unset VENICE_API_KEY
-  note "Pi: Venice credentials verified; every text model Venice offers registered in $PI_MODELS"
+  note "Pi: Venice credentials verified; catalog models checked and every online Venice text model registered in $PI_MODELS"
 fi
 fi
 

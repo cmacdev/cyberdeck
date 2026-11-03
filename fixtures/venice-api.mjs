@@ -6,19 +6,20 @@ const veniceModels = Object.values(
 ).flatMap((model) => model.providers.venice ?? []);
 export const veniceModelIds = veniceModels.map((model) => model.id);
 
-function catalogEntry({ id, thinking = [], privacy, offline, supportsFunctionCalling, supportsVision = false }) {
+function catalogEntry({ id, thinking = [], privacy, spec = {} }) {
   return {
     id, type: "text",
     model_spec: {
-      name: id, privacy, offline,
+      name: id, privacy, offline: false,
       availableContextTokens: 1000000, maxCompletionTokens: 32768,
-      capabilities: { supportsFunctionCalling, supportsReasoning: true, supportsReasoningEffort: thinking.length > 0, ...(thinking.length ? { reasoningEffortOptions: thinking.map((level) => (level === "off" ? "none" : level)) } : {}), supportsVision },
+      capabilities: { supportsFunctionCalling: true, supportsReasoning: true, supportsReasoningEffort: thinking.length > 0, ...(thinking.length ? { reasoningEffortOptions: thinking.map((level) => (level === "off" ? "none" : level)) } : {}), supportsVision: false },
       pricing: { input: { usd: 1 }, output: { usd: 2 } },
+      ...spec,
     },
   };
 }
 
-export function veniceFixture({ modelPrivacy = "private", modelPrivacyById = {}, failPath, offline = false, supportsFunctionCalling = true, extraModels = [] } = {}) {
+export function veniceFixture({ modelPrivacy = "private", modelPrivacyById = {}, failPath, extraModels = [] } = {}) {
   const calls = [];
   const fetch = async (url, options) => {
     const path = new URL(url).pathname.replace("/api/v1", "");
@@ -28,10 +29,8 @@ export function veniceFixture({ modelPrivacy = "private", modelPrivacyById = {},
     let data;
     if (path === "/models") {
       data = [
-        ...veniceModels.map(({ id, thinking }) => catalogEntry({
-          id, thinking, privacy: modelPrivacyById[id] ?? modelPrivacy, offline, supportsFunctionCalling,
-        })),
-        ...extraModels.map((model) => catalogEntry({ privacy: modelPrivacy, offline, supportsFunctionCalling, ...model })),
+        ...veniceModels.map(({ id, thinking }) => catalogEntry({ id, thinking, privacy: modelPrivacyById[id] ?? modelPrivacy })),
+        ...extraModels.map((model) => catalogEntry({ privacy: modelPrivacy, ...model })),
       ];
     } else if (path === "/api_keys/rate_limits") {
       data = { accessPermitted: true };
