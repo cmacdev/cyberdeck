@@ -27,6 +27,7 @@ It does **not** enforce these boundaries:
 - The calling MCP client approves the outer call. Nested Pi tool calls are not separately visible in that client's approval UI.
 - Repository context, source files, tool output, and web results can contain prompt injection.
 - Concurrency and time are capped, but per-run token or dollar spend is not. Use provider-side key/account limits for a hard budget.
+- When the user explicitly asks for a model outside the catalog, the `deck` skill runs `pi --print` directly on the installed provider, with the task on stdin, read-only tools unless changes were requested, and no session, discovery, or telemetry. It skips the catalog, thinking pins, workspace roots, limits, artifacts, the `implemented_by` check, and Venice's private-model check; the client approves it as a shell command.
 
 For untrusted code or unattended implementation, run the entire MCP/Pi process in a container, VM, or other OS-enforced sandbox with narrow mounts and network policy. Treat `implement` as a consequential tool and keep the calling client's approval mode on prompt/ask unless you intentionally accept unattended writes.
 
