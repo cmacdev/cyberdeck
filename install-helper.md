@@ -14,7 +14,7 @@ Every stop prints its cause; apply the fix and re-run the same command.
 | `Node.js >= 20 is required` | Install or upgrade Node (e.g. `brew install node`) so `node` on `PATH` is 20 or newer. |
 | `npm is required to install or update Pi` | Install Node.js with npm included, then re-run. |
 | `npm's global directory … is not writable by <user>` | `npm config set prefix ~/.npm-global && export PATH="$HOME/.npm-global/bin:$PATH"`, and put the `PATH` line in your shell profile. Do not sudo. |
-| `ACTION REQUIRED: add <dir> to PATH` (not a stop) | Pi went into npm's global `bin`, which is not on your normal `PATH`; MCP clients use the recorded absolute path, but add the directory to your shell profile for terminal use. |
+| `ACTION REQUIRED: add <dir> to PATH … find pi` (not a stop) | Pi went into npm's global `bin`, which is not on your normal `PATH`; MCP clients use the recorded absolute path, but add the directory to your shell profile for terminal use. |
 | `git is required` | Install git (`xcode-select --install` or `brew install git`). |
 | `cannot reach <repo>` | Network, DNS, or URL problem: check connectivity, or set `CYBERDECK_REPO_URL` to a reachable clone URL. |
 | `<dir> exists and is not a Cyberdeck home` | `CYBERDECK_HOME` points at an unrelated directory. Point it at a new or empty one, or unset it to use `~/.cyberdeck`. |
@@ -34,12 +34,8 @@ Every stop prints its cause; apply the fix and re-run the same command.
 | `cannot update ~/.cyberdeck/cyberdeck.config.json` | Make the published `cyberdeck.config.json` valid JSON and the installed policy writable, then re-run. |
 | `cyberdeck.config.json is missing from <dir>` | The checkout is incomplete. Restore it (the piped installer clones a complete one), then re-run. |
 | `the bundled deck skill is missing` | Restore or update the Cyberdeck checkout (piped installs update `~/.cyberdeck/app` automatically). |
-| `curl is required to install Herdr` | Install curl, then re-run. |
-| `Herdr CLI install failed` | Fix the error printed above, then re-run. |
-| `Herdr app install failed` | Fix the error printed above, then re-run. |
-| `Herdr app is not published for this system` (not a stop) | The CLI was still installed. Intel Macs and other systems without a published app build do not get the desktop app. |
-| `so future shells can find herdr` (not a stop) | Add that directory to PATH in your shell profile. |
-| `updated Herdr at` (not a stop) | Another `herdr` is earlier on PATH. Put the install directory first so the shell uses the Herdr this installer wrote. |
+| `Herdr CLI install failed` | Fix the error printed above, install Herdr from herdr.dev/docs/install, or re-run without `--herdr`. |
+| `ACTION REQUIRED: add <dir> to PATH … find herdr` (not a stop) | `--herdr` installed Herdr in that directory, which is not on your `PATH`; add it to your shell profile. |
 | `cannot install the coordinator at <path> because it is not managed by Cyberdeck` | Move that extension directory aside, then re-run with `--herdr`. |
 | `cannot install the deck skill at <path> because that path already exists` | A non-Cyberdeck skill owns the name `deck`. Move or remove it; the installer never overwrites it. |
 | `unexpected failure at install.sh line <n>` | The named command failed; fix the error printed above it and re-run. |
@@ -108,7 +104,7 @@ metadata. Every install runs `npm install -g @earendil-works/pi-coding-agent@lat
 when Pi is already present. `--dry-run` does not install, but still requires npm and a writable
 global directory. There is no pin and no flag to keep an older Pi. A prerelease can move back to
 the latest stable tag. Pi's auth store and other settings are not. `--uninstall` still leaves Pi.
-Every install also runs the Herdr CLI installer and, where a build is published, the Herdr app installer, including when those are already present. There is no pin. `--dry-run` does not install them, but still requires curl. `--uninstall` leaves Herdr.
+With `--herdr`, the installer also installs or updates the latest Herdr CLI unless `herdr` is installed elsewhere.
 Delegated runs suppress Pi's update notices by design; interactive `pi` shows them itself.
 Servers bound to the installed policy pick up the replacement without a restart.
 
@@ -126,8 +122,8 @@ and `~/.cyberdeck` (only when it is a Cyberdeck home); everything else in those 
 the extension in Claude Desktop. Pi, its auth store, and provider settings stay. Revoke unused
 Venice keys in Venice API settings separately.
 Stop any coordinator worker servers with `herdr session stop <name>` before uninstalling.
-Herdr's CLI, app, core, and official Pi state integration are left installed.
-`npm uninstall -g @earendil-works/pi-coding-agent` and `rm -rf ~/.pi` remove them.
+Herdr, including a CLI installed by `--herdr`, and its official Pi state integration are left installed, as Pi is.
+`npm uninstall -g @earendil-works/pi-coding-agent` and `rm -rf ~/.pi` remove Pi and its state.
 
 Pi's `settings.json` is left unchanged, including defaults written by older Cyberdeck
 installers. To remove those defaults, edit that file yourself; remove `cyberdeckDefaults`

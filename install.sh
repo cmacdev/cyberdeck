@@ -6,19 +6,17 @@ PI_PACKAGE="@earendil-works/pi-coding-agent"
 CYBERDECK_HOME="${CYBERDECK_HOME:-$HOME/.cyberdeck}"
 if [ -d "$CYBERDECK_HOME" ]; then CYBERDECK_HOME="$(cd "$CYBERDECK_HOME" && pwd -P)"; fi
 CYBERDECK_REPO_URL="${CYBERDECK_REPO_URL:-https://github.com/cmacdev/cyberdeck.git}"
-HERDR_CLI_URL="${HERDR_CLI_URL:-https://herdr.dev/install.sh}"
-HERDR_APP_URL="${HERDR_APP_URL:-https://releases.herdr.dev/app/install.sh}"
 
 usage() {
   cat <<EOF
 Usage: bash install.sh [--provider openrouter|venice] [--codex-only] [--herdr] [--dry-run] [--uninstall]
 
 Idempotent and sudo-free. Registers Cyberdeck with Claude Code and Codex (plus ChatGPT
-Desktop on macOS), installs or updates Pi and Herdr to the latest release, and stores the
-selected provider key in Pi's auth store only when Pi has none. Venice requires an inference key.
+Desktop on macOS), installs or updates Pi to the latest release, and stores the selected
+provider key in Pi's auth store only when Pi has none. Venice requires an inference key.
 Piped runs clone CYBERDECK_REPO_URL into CYBERDECK_HOME/app.
 --codex-only skips Claude installation and never invokes its CLI.
---herdr installs the Pi coordinator extension. Herdr's CLI and app are installed on every install.
+--herdr installs or updates the Herdr CLI and installs the Pi coordinator extension.
 --dry-run prints the plan; --uninstall leaves Pi, its auth store, provider settings, and Herdr.
 EOF
 }
@@ -373,80 +371,6 @@ else
   fi
 fi
 
-herdr_sysctl() {
-  if command -v sysctl >/dev/null 2>&1; then
-    sysctl "$@" 2>/dev/null || true
-    return
-  fi
-  if [ -x /usr/sbin/sysctl ]; then
-    /usr/sbin/sysctl "$@" 2>/dev/null || true
-    return
-  fi
-  true
-}
-herdr_app_supported() {
-  local os arch arm translated
-  os="$(uname -s)"
-  arch="$(uname -m)"
-  case "$os" in
-    Linux|Darwin) ;;
-    *) return 1 ;;
-  esac
-  case "$arch" in
-    x86_64|amd64) arch="x86_64" ;;
-    aarch64|arm64) arch="aarch64" ;;
-    *) return 1 ;;
-  esac
-  if [ "$os" = "Darwin" ] && [ "$arch" = "x86_64" ]; then
-    arm="$(herdr_sysctl -n hw.optional.arm64)"
-    translated="$(herdr_sysctl -n sysctl.proc_translated)"
-    if [ "$arm" = "1" ] || [ "$translated" = "1" ]; then
-      return 0
-    fi
-    return 1
-  fi
-  return 0
-}
-install_herdr() {
-  local install_dir previous
-  command -v curl >/dev/null 2>&1 || die "curl is required to install Herdr. Install curl, then re-run."
-  install_dir="${HERDR_INSTALL_DIR:-$HOME/.local/bin}"
-  previous=""
-  if command -v herdr >/dev/null 2>&1; then
-    previous="$(command -v herdr)"
-  fi
-  if [ "$DRY_RUN" -eq 1 ]; then
-    echo "$LOG_PREFIX: would run: curl -fsSL $HERDR_CLI_URL | sh"
-    note "would install or update the latest Herdr CLI"
-    if herdr_app_supported; then
-      echo "$LOG_PREFIX: would run: curl -fsSL $HERDR_APP_URL | sh"
-      note "would install or update the Herdr app"
-    else
-      note "Herdr app is not published for this system; the CLI would still be installed"
-    fi
-    return
-  fi
-  curl -fsSL "$HERDR_CLI_URL" | sh || die "Herdr CLI install failed. Fix the error printed above, then re-run."
-  if [ -x "$install_dir/herdr" ]; then
-    case ":$PATH:" in
-      *":$install_dir:"*) ;;
-      *) note "ACTION REQUIRED: add $install_dir to PATH in your shell profile so future shells can find herdr" ;;
-    esac
-    if [ -n "$previous" ] && [ "$previous" != "$install_dir/herdr" ]; then
-      note "ACTION REQUIRED: put $install_dir first on PATH so the shell uses the updated Herdr at $install_dir/herdr"
-    fi
-    export PATH="$install_dir:$PATH"
-  fi
-  note "Herdr: installed or updated the latest CLI"
-  if herdr_app_supported; then
-    curl -fsSL "$HERDR_APP_URL" | sh || die "Herdr app install failed. Fix the error printed above, then re-run."
-    note "Herdr: installed or updated the app"
-  else
-    note "Herdr app is not published for this system; the CLI was installed"
-  fi
-}
-install_herdr
-
 if [ "$PROVIDER" = openrouter ]; then
 auth_ready() {
   local report
@@ -723,11 +647,33 @@ install_deck_skill() {
 if [ "$CODEX_ONLY" -ne 1 ]; then install_deck_skill "Claude Code" "$HOME/.claude/skills/deck"; fi
 install_deck_skill "Codex and ChatGPT Desktop" "$HOME/.codex/skills/deck"
 
+HERDR_INSTALL_DIR="${HERDR_INSTALL_DIR:-$HOME/.local/bin}"
+install_herdr() {
+  local current
+  current="$(command -v herdr || true)"
+  if [ -n "$current" ] && [ "$current" != "$HERDR_INSTALL_DIR/herdr" ]; then
+    note "Herdr at $current is managed elsewhere; left untouched"
+    return
+  fi
+  if [ "$DRY_RUN" -eq 1 ]; then
+    note "would install or update the latest Herdr CLI at $HERDR_INSTALL_DIR/herdr from https://herdr.dev/install.sh"
+    return
+  fi
+  curl -fsSL https://herdr.dev/install.sh | env -u OPENROUTER_API_KEY -u VENICE_API_KEY sh \
+    || die "Herdr CLI install failed. Fix the error printed above, install Herdr from herdr.dev/docs/install, or re-run without --herdr."
+  note "Herdr: installed or updated the latest CLI at $HERDR_INSTALL_DIR/herdr"
+  case ":$PATH:" in
+    *":$HERDR_INSTALL_DIR:"*) ;;
+    *) note "ACTION REQUIRED: add $HERDR_INSTALL_DIR to PATH in your shell profile so future shells can find herdr" ;;
+  esac
+}
 COORDINATOR_TARGET="$PI_AGENT_DIR/extensions/cyberdeck-coordinator"
 if [ "$HERDR" -eq 1 ] || [ -f "$COORDINATOR_TARGET/.cyberdeck-managed" ]; then
   if [ -e "$COORDINATOR_TARGET" ] && [ ! -f "$COORDINATOR_TARGET/.cyberdeck-managed" ]; then
     die "cannot install the coordinator at $COORDINATOR_TARGET because it is not managed by Cyberdeck. Move it aside, then re-run with --herdr."
   fi
+  if [ "$HERDR" -eq 1 ]; then install_herdr; fi
+  command -v herdr >/dev/null 2>&1 || PATH="$PATH:$HERDR_INSTALL_DIR"
   run herdr integration install pi
   if [ "$DRY_RUN" -eq 1 ]; then
     note "Pi: would install the coordinator extension at $COORDINATOR_TARGET"
@@ -761,7 +707,7 @@ if [ "$PLATFORM" = "Darwin" ]; then
     note "ACTION REQUIRED: remove the Cyberdeck extension in Claude Desktop under Settings > Extensions; Claude Code in the app uses the cyberdeck registration (this script never edits Claude Desktop's app state)"
   fi
 else
-  note "macOS desktop integrations skipped on $PLATFORM"
+  note "macOS desktop integrations skipped on $PLATFORM; no desktop app detection or installation was attempted"
 fi
 
 if [ "$DRY_RUN" -eq 1 ]; then
