@@ -665,6 +665,8 @@ test("the shipped deck skill is concise and names the Cyberdeck routing contract
     "`implemented_by`",
     "`cyberdeck://catalog`",
     "Retry only upward in intelligence",
+    "Breakglass only when the user explicitly asks",
+    "`pi --print --provider <provider> --model <provider-id>`",
   ]) {
     assert.ok(skill.includes(term), `missing ${term}`);
   }
