@@ -30,7 +30,19 @@ async function withNpmStub(options = {}) {
     path.join(stub, "npm"),
     `#!/bin/sh\nprintf '%s\\n' "$*" >> ${JSON.stringify(trace)}\ncase "$1" in\n  root) printf '%s\\n' ${JSON.stringify(path.join(stub, "root"))} ;;\n  prefix) printf '%s\\n' ${JSON.stringify(prefix)} ;;\nesac\nexit 0\n`,
   );
-  await writeFile(path.join(stub, "curl"), `#!/bin/sh\nprintf '%s\\n' "$*" >> "$HOME/curl-calls"\ncat "$HOME/herdr-install.sh" 2>/dev/null\nexit 0\n`);
+  await writeFile(path.join(stub, "curl"), `#!/bin/sh
+printf '%s\n' "$*" >> "$HOME/curl-calls"
+case "$*" in
+  *releases.herdr.dev/app/install.sh*)
+    if [ -f "$HOME/herdr-app-fail" ]; then
+      printf '%s\n' 'echo "herdr: app install failed" >&2; exit 1'
+      exit 0
+    fi
+    ;;
+esac
+cat "$HOME/herdr-install.sh" 2>/dev/null
+exit 0
+`);
   await chmod(path.join(stub, "npm"), 0o755);
   await chmod(path.join(stub, "curl"), 0o755);
   return { ...options, env: { ...env, PATH: `${stub}:${prefixBin}:${env.PATH ?? ""}` } };
@@ -714,7 +726,7 @@ test("the installer contains no OpenCode or Grok Build registration and no hardc
   assert.doesNotMatch(installer, /x-ai\/|moonshotai\/|deepseek\//);
 });
 
-test("Herdr opt-in installs and updates only its managed coordinator and preserves Pi settings", async (t) => {
+test("Herdr opt-in leaves an external CLI untouched, still installs the app, and preserves Pi settings", async (t) => {
   const fixture = await makeFixture(t);
   const bin = path.join(fixture.root, "bin");
   await mkdir(bin);
@@ -733,12 +745,16 @@ test("Herdr opt-in installs and updates only its managed coordinator and preserv
   await writeFile(path.join(agent, "settings.json"), settings);
   const env = { ...process.env, HOME: fixture.root, CYBERDECK_HOME: path.join(fixture.root, ".cyberdeck"), PI_CODING_AGENT_DIR: agent, PATH: `${bin}:${testSystemPath}` };
   const target = path.join(agent, "extensions/cyberdeck-coordinator");
-  await execFileAsync("bash", ["install.sh", "--codex-only", "--herdr", "--dry-run"], { cwd: packageDirectory, env });
+  const dry = await execFileAsync("bash", ["install.sh", "--codex-only", "--herdr", "--dry-run"], { cwd: packageDirectory, env });
+  assert.match(dry.stdout, /managed elsewhere/);
+  assert.match(dry.stdout, /would install or update the Herdr app/);
   assert.equal(existsSync(target), false);
   assert.equal(existsSync(trace), false);
+  assert.equal(existsSync(path.join(fixture.root, "curl-calls")), false);
   const installed = await execFileAsync("bash", ["install.sh", "--codex-only", "--herdr"], { cwd: packageDirectory, env });
   assert.match(installed.stdout, /Herdr at .* is managed elsewhere; left untouched/);
-  assert.equal(existsSync(path.join(fixture.root, "curl-calls")), false);
+  assert.match(installed.stdout, /Herdr: installed or updated the app/);
+  assert.equal(await readFile(path.join(fixture.root, "curl-calls"), "utf8"), "-fsSL https://releases.herdr.dev/app/install.sh\n");
   const loader = await readFile(path.join(target, "index.js"), "utf8");
   assert.match(loader, /pi\/coordinator.js/);
   assert.ok(loader.includes(await realpath(path.join(fixture.root, ".cyberdeck/cyberdeck.config.json"))));
@@ -753,7 +769,7 @@ test("Herdr opt-in installs and updates only its managed coordinator and preserv
   assert.equal(await readFile(path.join(agent, "settings.json"), "utf8"), settings);
 });
 
-test("only --herdr installs the Herdr CLI, and its installer never sees provider keys", async (t) => {
+test("only --herdr installs the Herdr CLI and app, and neither installer sees provider keys", async (t) => {
   const fixture = await makeFixture(t);
   const bin = path.join(fixture.root, "bin");
   await mkdir(bin);
@@ -781,13 +797,49 @@ test("only --herdr installs the Herdr CLI, and its installer never sees provider
   assert.equal(existsSync(calls), false);
   const dry = await execFileAsync("bash", ["install.sh", "--codex-only", "--herdr", "--dry-run", "--provider", "openrouter"], { cwd: packageDirectory, env });
   assert.match(dry.stdout, /would install or update the latest Herdr CLI/);
+  assert.match(dry.stdout, /would install or update the Herdr app/);
   assert.equal(existsSync(calls), false);
   const installed = await execFileAsync("bash", ["install.sh", "--codex-only", "--herdr", "--provider", "openrouter"], { cwd: packageDirectory, env });
-  assert.equal(await readFile(calls, "utf8"), "-fsSL https://herdr.dev/install.sh\nkeys=\n");
+  assert.equal(await readFile(calls, "utf8"), "-fsSL https://herdr.dev/install.sh\nkeys=\n-fsSL https://releases.herdr.dev/app/install.sh\nkeys=\n");
   assert.match(installed.stdout, /so future shells can find herdr/);
+  assert.match(installed.stdout, /Herdr: installed or updated the app/);
   await execFileAsync("bash", ["install.sh", "--codex-only", "--provider", "openrouter"], { cwd: packageDirectory, env });
-  assert.equal(await readFile(calls, "utf8"), "-fsSL https://herdr.dev/install.sh\nkeys=\n");
+  assert.equal(await readFile(calls, "utf8"), "-fsSL https://herdr.dev/install.sh\nkeys=\n-fsSL https://releases.herdr.dev/app/install.sh\nkeys=\n");
   assert.equal(await readFile(path.join(fixture.root, "herdr-calls"), "utf8"), "integration install pi\nintegration install pi\n");
+});
+
+test("a failed Herdr app install does not stop the CLI or coordinator install", async (t) => {
+  const fixture = await makeFixture(t);
+  const bin = path.join(fixture.root, "bin");
+  await mkdir(bin);
+  for (const [name, script] of [
+    ["pi", '#!/bin/sh\nif [ "$1" = "--version" ]; then echo "pi 0.84.2"; else echo ready; fi\n'],
+    ["uname", "#!/bin/sh\necho Darwin\n"],
+    ["open", "#!/bin/sh\nexit 1\n"],
+  ]) {
+    await writeFile(path.join(bin, name), script);
+    await chmod(path.join(bin, name), 0o755);
+  }
+  await writeFile(path.join(fixture.root, "herdr-app-fail"), "");
+  await writeFile(path.join(fixture.root, "herdr-install.sh"), [
+    'mkdir -p "$HOME/.local/bin"',
+    'printf \'#!/bin/sh\\necho "$*" >> "$HOME/herdr-calls"\\n\' > "$HOME/.local/bin/herdr"',
+    'chmod +x "$HOME/.local/bin/herdr"',
+    "",
+  ].join("\n"));
+  const env = {
+    ...process.env, HOME: fixture.root, CYBERDECK_HOME: path.join(fixture.root, ".cyberdeck"),
+    PI_CODING_AGENT_DIR: path.join(fixture.root, ".pi/agent"),
+    PATH: `${bin}:${testSystemPath}`,
+  };
+  const installed = await execFileAsync("bash", ["install.sh", "--codex-only", "--herdr", "--provider", "openrouter"], { cwd: packageDirectory, env });
+  assert.equal(installed.stderr.includes("unexpected failure"), false);
+  assert.match(installed.stderr, /herdr: app install failed/);
+  assert.match(installed.stdout, /installed or updated the latest CLI/);
+  assert.match(installed.stdout, /Herdr app not installed; see the error above\. Fix that and re-run with --herdr\. The CLI and coordinator are unaffected/);
+  assert.doesNotMatch(installed.stdout, /Herdr: installed or updated the app/);
+  assert.equal(existsSync(path.join(fixture.root, ".pi/agent/extensions/cyberdeck-coordinator/index.js")), true);
+  assert.equal(await readFile(path.join(fixture.root, "herdr-calls"), "utf8"), "integration install pi\n");
 });
 
 test("every install updates Pi to the npm latest tag, including an existing Pi", async (t) => {

@@ -16,7 +16,7 @@ Desktop on macOS), installs or updates Pi to the latest release, and stores the 
 provider key in Pi's auth store only when Pi has none. Venice requires an inference key.
 Piped runs clone CYBERDECK_REPO_URL into CYBERDECK_HOME/app.
 --codex-only skips Claude installation and never invokes its CLI.
---herdr installs or updates the Herdr CLI and installs the Pi coordinator extension.
+--herdr installs or updates the Herdr CLI and app, and installs the Pi coordinator extension.
 --dry-run prints the plan; --uninstall leaves Pi, its auth store, provider settings, and Herdr.
 EOF
 }
@@ -667,12 +667,23 @@ install_herdr() {
     *) note "ACTION REQUIRED: add $HERDR_INSTALL_DIR to PATH in your shell profile so future shells can find herdr" ;;
   esac
 }
+install_herdr_app() {
+  if [ "$DRY_RUN" -eq 1 ]; then
+    note "would install or update the Herdr app from https://releases.herdr.dev/app/install.sh"
+    return
+  fi
+  if curl -fsSL https://releases.herdr.dev/app/install.sh | env -u OPENROUTER_API_KEY -u VENICE_API_KEY sh; then
+    note "Herdr: installed or updated the app"
+  else
+    note "Herdr app not installed; see the error above. Fix that and re-run with --herdr. The CLI and coordinator are unaffected."
+  fi
+}
 COORDINATOR_TARGET="$PI_AGENT_DIR/extensions/cyberdeck-coordinator"
 if [ "$HERDR" -eq 1 ] || [ -f "$COORDINATOR_TARGET/.cyberdeck-managed" ]; then
   if [ -e "$COORDINATOR_TARGET" ] && [ ! -f "$COORDINATOR_TARGET/.cyberdeck-managed" ]; then
     die "cannot install the coordinator at $COORDINATOR_TARGET because it is not managed by Cyberdeck. Move it aside, then re-run with --herdr."
   fi
-  if [ "$HERDR" -eq 1 ]; then install_herdr; fi
+  if [ "$HERDR" -eq 1 ]; then install_herdr; install_herdr_app; fi
   command -v herdr >/dev/null 2>&1 || PATH="$PATH:$HERDR_INSTALL_DIR"
   run herdr integration install pi
   if [ "$DRY_RUN" -eq 1 ]; then
@@ -707,7 +718,7 @@ if [ "$PLATFORM" = "Darwin" ]; then
     note "ACTION REQUIRED: remove the Cyberdeck extension in Claude Desktop under Settings > Extensions; Claude Code in the app uses the cyberdeck registration (this script never edits Claude Desktop's app state)"
   fi
 else
-  note "macOS desktop integrations skipped on $PLATFORM; no desktop app detection or installation was attempted"
+  note "macOS desktop integrations skipped on $PLATFORM"
 fi
 
 if [ "$DRY_RUN" -eq 1 ]; then
