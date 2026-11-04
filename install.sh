@@ -16,8 +16,8 @@ Desktop on macOS), installs or updates Pi to the latest release, and stores the 
 provider key in Pi's auth store only when Pi has none. Venice requires an inference key.
 Piped runs clone CYBERDECK_REPO_URL into CYBERDECK_HOME/app.
 --codex-only skips Claude installation and never invokes its CLI.
---herdr installs the Pi coordinator extension; requires an existing Herdr installation.
---dry-run prints the plan; --uninstall leaves Pi, its auth store, and provider settings.
+--herdr installs or updates the Herdr CLI and installs the Pi coordinator extension.
+--dry-run prints the plan; --uninstall leaves Pi, its auth store, provider settings, and Herdr.
 EOF
 }
 
@@ -647,12 +647,33 @@ install_deck_skill() {
 if [ "$CODEX_ONLY" -ne 1 ]; then install_deck_skill "Claude Code" "$HOME/.claude/skills/deck"; fi
 install_deck_skill "Codex and ChatGPT Desktop" "$HOME/.codex/skills/deck"
 
+HERDR_INSTALL_DIR="${HERDR_INSTALL_DIR:-$HOME/.local/bin}"
+install_herdr() {
+  local current
+  current="$(command -v herdr || true)"
+  if [ -n "$current" ] && [ "$current" != "$HERDR_INSTALL_DIR/herdr" ]; then
+    note "Herdr at $current is managed elsewhere; left untouched"
+    return
+  fi
+  if [ "$DRY_RUN" -eq 1 ]; then
+    note "would install or update the latest Herdr CLI at $HERDR_INSTALL_DIR/herdr from https://herdr.dev/install.sh"
+    return
+  fi
+  curl -fsSL https://herdr.dev/install.sh | env -u OPENROUTER_API_KEY -u VENICE_API_KEY sh \
+    || die "Herdr CLI install failed. Fix the error printed above, install Herdr from herdr.dev/docs/install, or re-run without --herdr."
+  note "Herdr: installed or updated the latest CLI at $HERDR_INSTALL_DIR/herdr"
+  case ":$PATH:" in
+    *":$HERDR_INSTALL_DIR:"*) ;;
+    *) note "ACTION REQUIRED: add $HERDR_INSTALL_DIR to PATH in your shell profile so future shells can find herdr" ;;
+  esac
+}
 COORDINATOR_TARGET="$PI_AGENT_DIR/extensions/cyberdeck-coordinator"
 if [ "$HERDR" -eq 1 ] || [ -f "$COORDINATOR_TARGET/.cyberdeck-managed" ]; then
-  command -v herdr >/dev/null 2>&1 || die "Herdr is required for --herdr. Install Herdr from herdr.dev, then re-run with --herdr."
   if [ -e "$COORDINATOR_TARGET" ] && [ ! -f "$COORDINATOR_TARGET/.cyberdeck-managed" ]; then
     die "cannot install the coordinator at $COORDINATOR_TARGET because it is not managed by Cyberdeck. Move it aside, then re-run with --herdr."
   fi
+  if [ "$HERDR" -eq 1 ]; then install_herdr; fi
+  command -v herdr >/dev/null 2>&1 || PATH="$PATH:$HERDR_INSTALL_DIR"
   run herdr integration install pi
   if [ "$DRY_RUN" -eq 1 ]; then
     note "Pi: would install the coordinator extension at $COORDINATOR_TARGET"

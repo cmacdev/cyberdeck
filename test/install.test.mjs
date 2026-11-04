@@ -30,7 +30,9 @@ async function withNpmStub(options = {}) {
     path.join(stub, "npm"),
     `#!/bin/sh\nprintf '%s\\n' "$*" >> ${JSON.stringify(trace)}\ncase "$1" in\n  root) printf '%s\\n' ${JSON.stringify(path.join(stub, "root"))} ;;\n  prefix) printf '%s\\n' ${JSON.stringify(prefix)} ;;\nesac\nexit 0\n`,
   );
+  await writeFile(path.join(stub, "curl"), `#!/bin/sh\nprintf '%s\\n' "$*" >> "$HOME/curl-calls"\ncat "$HOME/herdr-install.sh" 2>/dev/null\nexit 0\n`);
   await chmod(path.join(stub, "npm"), 0o755);
+  await chmod(path.join(stub, "curl"), 0o755);
   return { ...options, env: { ...env, PATH: `${stub}:${prefixBin}:${env.PATH ?? ""}` } };
 }
 
@@ -732,7 +734,9 @@ test("Herdr opt-in installs and updates only its managed coordinator and preserv
   await execFileAsync("bash", ["install.sh", "--codex-only", "--herdr", "--dry-run"], { cwd: packageDirectory, env });
   assert.equal(existsSync(target), false);
   assert.equal(existsSync(trace), false);
-  await execFileAsync("bash", ["install.sh", "--codex-only", "--herdr"], { cwd: packageDirectory, env });
+  const installed = await execFileAsync("bash", ["install.sh", "--codex-only", "--herdr"], { cwd: packageDirectory, env });
+  assert.match(installed.stdout, /Herdr at .* is managed elsewhere; left untouched/);
+  assert.equal(existsSync(path.join(fixture.root, "curl-calls")), false);
   const loader = await readFile(path.join(target, "index.js"), "utf8");
   assert.match(loader, /pi\/coordinator.js/);
   assert.ok(loader.includes(await realpath(path.join(fixture.root, ".cyberdeck/cyberdeck.config.json"))));
@@ -745,6 +749,43 @@ test("Herdr opt-in installs and updates only its managed coordinator and preserv
   await execFileAsync("bash", ["install.sh", "--codex-only", "--uninstall"], { cwd: packageDirectory, env: uninstallEnv });
   assert.equal(existsSync(target), false);
   assert.equal(await readFile(path.join(agent, "settings.json"), "utf8"), settings);
+});
+
+test("only --herdr installs the Herdr CLI, and its installer never sees provider keys", async (t) => {
+  const fixture = await makeFixture(t);
+  const bin = path.join(fixture.root, "bin");
+  await mkdir(bin);
+  for (const [name, script] of [
+    ["pi", '#!/bin/sh\nif [ "$1" = "--version" ]; then echo "pi 0.84.2"; else echo ready; fi\n'],
+    ["uname", "#!/bin/sh\necho Linux\n"],
+  ]) {
+    await writeFile(path.join(bin, name), script);
+    await chmod(path.join(bin, name), 0o755);
+  }
+  await writeFile(path.join(fixture.root, "herdr-install.sh"), [
+    'mkdir -p "$HOME/.local/bin"',
+    'printf \'#!/bin/sh\\necho "$*" >> "$HOME/herdr-calls"\\n\' > "$HOME/.local/bin/herdr"',
+    'chmod +x "$HOME/.local/bin/herdr"',
+    'echo "keys=${OPENROUTER_API_KEY:-}${VENICE_API_KEY:-}" >> "$HOME/curl-calls"',
+    "",
+  ].join("\n"));
+  const env = {
+    ...process.env, HOME: fixture.root, CYBERDECK_HOME: path.join(fixture.root, ".cyberdeck"),
+    PI_CODING_AGENT_DIR: path.join(fixture.root, ".pi/agent"), OPENROUTER_API_KEY: "sk-or-test", VENICE_API_KEY: "venice-test",
+    PATH: `${bin}:${testSystemPath}`,
+  };
+  const calls = path.join(fixture.root, "curl-calls");
+  await execFileAsync("bash", ["install.sh", "--codex-only", "--provider", "openrouter"], { cwd: packageDirectory, env });
+  assert.equal(existsSync(calls), false);
+  const dry = await execFileAsync("bash", ["install.sh", "--codex-only", "--herdr", "--dry-run", "--provider", "openrouter"], { cwd: packageDirectory, env });
+  assert.match(dry.stdout, /would install or update the latest Herdr CLI/);
+  assert.equal(existsSync(calls), false);
+  const installed = await execFileAsync("bash", ["install.sh", "--codex-only", "--herdr", "--provider", "openrouter"], { cwd: packageDirectory, env });
+  assert.equal(await readFile(calls, "utf8"), "-fsSL https://herdr.dev/install.sh\nkeys=\n");
+  assert.match(installed.stdout, /so future shells can find herdr/);
+  await execFileAsync("bash", ["install.sh", "--codex-only", "--provider", "openrouter"], { cwd: packageDirectory, env });
+  assert.equal(await readFile(calls, "utf8"), "-fsSL https://herdr.dev/install.sh\nkeys=\n");
+  assert.equal(await readFile(path.join(fixture.root, "herdr-calls"), "utf8"), "integration install pi\nintegration install pi\n");
 });
 
 test("every install updates Pi to the npm latest tag, including an existing Pi", async (t) => {
