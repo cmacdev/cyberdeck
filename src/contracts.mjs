@@ -29,7 +29,7 @@ function kindLine(config) {
 
 export function buildServerInstructions(config) {
   return [
-    "Stay in the calling harness. Delegate through these two tools; do not spawn Pi yourself.",
+    "Stay in the calling harness. Delegate through these two tools; do not spawn Pi yourself unless the user explicitly asks to run Pi directly with a model outside the catalog.",
     "research is read-only; implement may write or run shell. Any model works with either tool.",
     "Choose model by tier and strengths; start cheap and escalate to smart after a failure or for long-horizon work.",
     kindLine(config),
