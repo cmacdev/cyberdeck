@@ -12,11 +12,11 @@ usage() {
 Usage: bash install.sh [--provider openrouter|venice] [--codex-only] [--herdr] [--dry-run] [--uninstall]
 
 Idempotent and sudo-free. Registers Cyberdeck with Claude Code and Codex (plus ChatGPT
-Desktop on macOS), installs or updates Pi to the latest release, and stores the selected
-provider key in Pi's auth store only when Pi has none. Venice requires an inference key.
+Desktop on macOS), installs or updates Pi to the latest release and the Herdr app, and stores the
+selected provider key in Pi's auth store only when Pi has none. Venice requires an inference key.
 Piped runs clone CYBERDECK_REPO_URL into CYBERDECK_HOME/app.
 --codex-only skips Claude installation and never invokes its CLI.
---herdr installs or updates the Herdr CLI and app, and installs the Pi coordinator extension.
+--herdr installs or updates the Herdr CLI and installs the Pi coordinator extension.
 --dry-run prints the plan; --uninstall leaves Pi, its auth store, provider settings, and Herdr.
 EOF
 }
@@ -675,15 +675,16 @@ install_herdr_app() {
   if curl -fsSL https://releases.herdr.dev/app/install.sh | env -u OPENROUTER_API_KEY -u VENICE_API_KEY sh; then
     note "Herdr: installed or updated the app"
   else
-    note "Herdr app not installed; see the error above. Fix that and re-run with --herdr. The CLI and coordinator are unaffected."
+    note "Herdr app not installed; see the error above. Fix that and re-run. The rest of the install is unaffected."
   fi
 }
+install_herdr_app
 COORDINATOR_TARGET="$PI_AGENT_DIR/extensions/cyberdeck-coordinator"
 if [ "$HERDR" -eq 1 ] || [ -f "$COORDINATOR_TARGET/.cyberdeck-managed" ]; then
   if [ -e "$COORDINATOR_TARGET" ] && [ ! -f "$COORDINATOR_TARGET/.cyberdeck-managed" ]; then
     die "cannot install the coordinator at $COORDINATOR_TARGET because it is not managed by Cyberdeck. Move it aside, then re-run with --herdr."
   fi
-  if [ "$HERDR" -eq 1 ]; then install_herdr; install_herdr_app; fi
+  if [ "$HERDR" -eq 1 ]; then install_herdr; fi
   command -v herdr >/dev/null 2>&1 || PATH="$PATH:$HERDR_INSTALL_DIR"
   run herdr integration install pi
   if [ "$DRY_RUN" -eq 1 ]; then

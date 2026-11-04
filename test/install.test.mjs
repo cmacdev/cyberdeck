@@ -769,7 +769,7 @@ test("Herdr opt-in leaves an external CLI untouched, still installs the app, and
   assert.equal(await readFile(path.join(agent, "settings.json"), "utf8"), settings);
 });
 
-test("only --herdr installs the Herdr CLI and app, and neither installer sees provider keys", async (t) => {
+test("every install updates the Herdr app, only --herdr installs the CLI, and neither installer sees provider keys", async (t) => {
   const fixture = await makeFixture(t);
   const bin = path.join(fixture.root, "bin");
   await mkdir(bin);
@@ -793,18 +793,23 @@ test("only --herdr installs the Herdr CLI and app, and neither installer sees pr
     PATH: `${bin}:${testSystemPath}`,
   };
   const calls = path.join(fixture.root, "curl-calls");
-  await execFileAsync("bash", ["install.sh", "--codex-only", "--provider", "openrouter"], { cwd: packageDirectory, env });
+  const plainDry = await execFileAsync("bash", ["install.sh", "--codex-only", "--dry-run", "--provider", "openrouter"], { cwd: packageDirectory, env });
+  assert.match(plainDry.stdout, /would install or update the Herdr app/);
+  assert.doesNotMatch(plainDry.stdout, /would install or update the latest Herdr CLI/);
   assert.equal(existsSync(calls), false);
+  const plain = await execFileAsync("bash", ["install.sh", "--codex-only", "--provider", "openrouter"], { cwd: packageDirectory, env });
+  assert.equal(await readFile(calls, "utf8"), "-fsSL https://releases.herdr.dev/app/install.sh\nkeys=\n");
+  assert.match(plain.stdout, /Herdr: installed or updated the app/);
+  assert.doesNotMatch(plain.stdout, /installed or updated the latest CLI/);
   const dry = await execFileAsync("bash", ["install.sh", "--codex-only", "--herdr", "--dry-run", "--provider", "openrouter"], { cwd: packageDirectory, env });
   assert.match(dry.stdout, /would install or update the latest Herdr CLI/);
   assert.match(dry.stdout, /would install or update the Herdr app/);
-  assert.equal(existsSync(calls), false);
+  assert.equal(await readFile(calls, "utf8"), "-fsSL https://releases.herdr.dev/app/install.sh\nkeys=\n");
   const installed = await execFileAsync("bash", ["install.sh", "--codex-only", "--herdr", "--provider", "openrouter"], { cwd: packageDirectory, env });
-  assert.equal(await readFile(calls, "utf8"), "-fsSL https://herdr.dev/install.sh\nkeys=\n-fsSL https://releases.herdr.dev/app/install.sh\nkeys=\n");
+  assert.equal(await readFile(calls, "utf8"), "-fsSL https://releases.herdr.dev/app/install.sh\nkeys=\n-fsSL https://releases.herdr.dev/app/install.sh\nkeys=\n-fsSL https://herdr.dev/install.sh\nkeys=\n");
   assert.match(installed.stdout, /so future shells can find herdr/);
-  assert.match(installed.stdout, /Herdr: installed or updated the app/);
   await execFileAsync("bash", ["install.sh", "--codex-only", "--provider", "openrouter"], { cwd: packageDirectory, env });
-  assert.equal(await readFile(calls, "utf8"), "-fsSL https://herdr.dev/install.sh\nkeys=\n-fsSL https://releases.herdr.dev/app/install.sh\nkeys=\n");
+  assert.equal(await readFile(calls, "utf8"), "-fsSL https://releases.herdr.dev/app/install.sh\nkeys=\n-fsSL https://releases.herdr.dev/app/install.sh\nkeys=\n-fsSL https://herdr.dev/install.sh\nkeys=\n-fsSL https://releases.herdr.dev/app/install.sh\nkeys=\n");
   assert.equal(await readFile(path.join(fixture.root, "herdr-calls"), "utf8"), "integration install pi\nintegration install pi\n");
 });
 
@@ -836,7 +841,7 @@ test("a failed Herdr app install does not stop the CLI or coordinator install", 
   assert.equal(installed.stderr.includes("unexpected failure"), false);
   assert.match(installed.stderr, /herdr: app install failed/);
   assert.match(installed.stdout, /installed or updated the latest CLI/);
-  assert.match(installed.stdout, /Herdr app not installed; see the error above\. Fix that and re-run with --herdr\. The CLI and coordinator are unaffected/);
+  assert.match(installed.stdout, /Herdr app not installed; see the error above\. Fix that and re-run\. The rest of the install is unaffected/);
   assert.doesNotMatch(installed.stdout, /Herdr: installed or updated the app/);
   assert.equal(existsSync(path.join(fixture.root, ".pi/agent/extensions/cyberdeck-coordinator/index.js")), true);
   assert.equal(await readFile(path.join(fixture.root, "herdr-calls"), "utf8"), "integration install pi\n");
