@@ -233,6 +233,7 @@ test("an invalid policy replacement rejects calls until the file is repaired", a
   const rejected = await call(client, "research", callArguments(fixture));
   assert.equal(rejected.structuredContent.status, "rejected");
   assert.match(rejected.structuredContent.error, /Configuration reload failed: Cannot read configuration/);
+  assert.match(rejected.structuredContent.error, /\. If Cyberdeck was updated after this server started, restart the MCP client; otherwise fix .*config\.json\.$/);
   await assert.rejects(access(fixture.artifactDirectory), "no run directory was created");
   await writeFile(configPath, `${JSON.stringify(makeConfig(fixture, { limits: { maxTaskCharacters: 9999 } }), null, 2)}\n`);
   const recovered = await call(client, "research", callArguments(fixture));
@@ -825,6 +826,17 @@ async function awaitRunResult(fixture, ms = 4000) {
   }
 }
 
+async function callWhenSlotFree(client, fixture, ms = 2000) {
+  const deadline = Date.now() + ms;
+  for (;;) {
+    const result = await call(client, "research", callArguments(fixture));
+    const error = result.structuredContent.error ?? "";
+    if (result.structuredContent.status !== "rejected" || !error.includes("Concurrent run limit reached")) return result;
+    assert.ok(Date.now() < deadline, error);
+    await sleep(25);
+  }
+}
+
 test("a cancelled request terminates Pi, gets no response, and is recorded", async (t) => {
   const { fixture, client } = await serverFor(t);
   const id = 77;
@@ -871,7 +883,8 @@ test("a duplicate request ID leaves the original run cancellable", async (t) => 
   assert.equal(duplicate?.error?.code, -32600);
   client.notify("notifications/cancelled", { requestId: id });
   assert.equal((await awaitRunResult(fixture)).status, "cancelled");
-  assert.equal((await call(client, "research", callArguments(fixture))).structuredContent.ok, true);
+  const recovered = await callWhenSlotFree(client, fixture);
+  assert.equal(recovered.structuredContent.ok, true, recovered.structuredContent.error);
 });
 
 test("a cancellation after Pi exited but before its pipes closed does not relabel the run", async (t) => {

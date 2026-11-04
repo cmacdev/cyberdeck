@@ -292,7 +292,7 @@ export function createServer(
               profileName,
               params.arguments,
               policy,
-              new InputError(`Configuration reload failed: ${reloadError.message}`),
+              new InputError(`Configuration reload failed: ${reloadError.message.replace(/\.$/, "")}. If Cyberdeck was updated after this server started, restart the MCP client; otherwise fix ${policy.configPath}.`),
             ),
           );
         }
