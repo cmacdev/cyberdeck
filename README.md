@@ -51,7 +51,7 @@ Cyberdeck is a local stdio MCP server with no npm dependencies. The caller decid
 | `kimi-k3` | smart | kimi | low, **high**, max | `moonshotai/kimi-k3` | `kimi-k3` | Long-horizon autonomy and hard reviews; very verbose, priciest |
 | `abliterated-large-v2` | smart | abliterated | – | – | `abliteration-abliterated-model-large-v2` (no thinking control) | Cybersecurity and adversarial work; abliterated, Venice only |
 
-Only private models: Venice installs register only private models except `abliteration-abliterated-model-large-v2`, which is anonymized (– means not offered on that provider), and OpenRouter requests are pinned to zero data retention. For an independent review, pass `implemented_by` with the implementer's family; a reviewer of that family is rejected.
+Only private models: Venice catalog models must be private except `abliteration-abliterated-model-large-v2`, which is anonymized, and OpenRouter requests are pinned to zero data retention. Venice installs also register Venice's other online text models in Pi, but `research` and `implement` accept only the catalog keys above (– means not offered on that provider). For an independent review, pass `implemented_by` with the implementer's family; a reviewer of that family is rejected.
 
 MCP runs are stateless (`--no-session`). Herdr workers are persistent Pi sessions. Shipped `pi.arguments` are `--no-extensions --no-skills`; a reinstall replaces them with the published policy. With `pi.stateDirectory` null, Pi reuses user-level auth and settings. With `pi.loadContextFiles` true, it loads `AGENTS.md` and `CLAUDE.md` from the working directory.
 
@@ -87,7 +87,7 @@ Run the command at the top. From a checkout: `bash install.sh [--provider openro
 
 Interactive installs ask for a provider, defaulting to the installed choice or OpenRouter. `--provider` skips the prompt. `--codex-only` installs and uninstalls without invoking Claude's CLI.
 
-OpenRouter uses `OPENROUTER_API_KEY` or a hidden prompt, and keeps an existing Pi credential. Venice uses the saved Pi key, `VENICE_API_KEY`, or a hidden prompt. Unrestricted and Private Only Venice inference keys are accepted; no admin key is required. Each install verifies authentication and registers only the catalog models described above. OpenRouter pins `zdr: true` and `data_collection: "deny"`, including on model-specific routing overrides. Security boundaries: [SECURITY.md](SECURITY.md).
+OpenRouter uses `OPENROUTER_API_KEY` or a hidden prompt, and keeps an existing Pi credential. Venice uses the saved Pi key, `VENICE_API_KEY`, or a hidden prompt. Unrestricted and Private Only Venice inference keys are accepted; no admin key is required. Each install verifies authentication and registers the catalog models described above; Venice installs also register Venice's other online text models in Pi. OpenRouter pins `zdr: true` and `data_collection: "deny"`, including on model-specific routing overrides. Security boundaries: [SECURITY.md](SECURITY.md).
 
 The installer writes exactly these locations:
 
@@ -101,7 +101,7 @@ The installer writes exactly these locations:
 | `~/.codex/config.toml` | `[mcp_servers.cyberdeck]` block (research `auto`, implement `prompt`); shared by Codex CLI and ChatGPT Desktop |
 | `~/.claude/skills/deck`, `~/.codex/skills/deck` | The `deck` skill with a `.cyberdeck-managed` marker; an unmanaged skill of that name is never overwritten |
 | `~/.pi/agent/auth.json` | Selected provider's inference key; unrelated credentials preserved |
-| `~/.pi/agent/models.json` | OpenRouter ZDR routing and catalog thinking levels on every install; Venice's endpoint and configured model metadata when selected; other providers preserved |
+| `~/.pi/agent/models.json` | OpenRouter ZDR routing and catalog thinking levels on every install; Venice's endpoint and every online Venice text model when selected; other providers preserved |
 | `~/.pi/agent/extensions/cyberdeck-coordinator`, `~/.pi/agent/extensions/herdr-agent-state.ts` | With `--herdr`: managed coordinator loader and Herdr's official Pi state extension |
 | npm's global directory (`npm prefix -g`) | Latest Pi, installed or updated on every install; `--uninstall` leaves it |
 

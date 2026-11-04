@@ -6,7 +6,20 @@ const veniceModels = Object.values(
 ).flatMap((model) => model.providers.venice ?? []);
 export const veniceModelIds = veniceModels.map((model) => model.id);
 
-export function veniceFixture({ modelPrivacy = "private", modelPrivacyById = {}, failPath } = {}) {
+function catalogEntry({ id, thinking = [], privacy, spec = {} }) {
+  return {
+    id, type: "text",
+    model_spec: {
+      name: id, privacy, offline: false,
+      availableContextTokens: 1000000, maxCompletionTokens: 32768,
+      capabilities: { supportsFunctionCalling: true, supportsReasoning: true, supportsReasoningEffort: thinking.length > 0, ...(thinking.length ? { reasoningEffortOptions: thinking.map((level) => (level === "off" ? "none" : level)) } : {}), supportsVision: false },
+      pricing: { input: { usd: 1 }, output: { usd: 2 } },
+      ...spec,
+    },
+  };
+}
+
+export function veniceFixture({ modelPrivacy = "private", modelPrivacyById = {}, failPath, extraModels = [] } = {}) {
   const calls = [];
   const fetch = async (url, options) => {
     const path = new URL(url).pathname.replace("/api/v1", "");
@@ -15,15 +28,10 @@ export function veniceFixture({ modelPrivacy = "private", modelPrivacyById = {},
     if (path === failPath) return { ok: false, status: 403, json: async () => ({ code: "UNAUTHORIZED" }) };
     let data;
     if (path === "/models") {
-      data = veniceModels.map(({ id, thinking }) => ({
-        id, type: "text",
-        model_spec: {
-          name: id, privacy: modelPrivacyById[id] ?? modelPrivacy, offline: false,
-          availableContextTokens: 1000000, maxCompletionTokens: 32768,
-          capabilities: { supportsFunctionCalling: true, supportsReasoning: true, supportsReasoningEffort: thinking.length > 0, ...(thinking.length ? { reasoningEffortOptions: thinking.map((level) => (level === "off" ? "none" : level)) } : {}), supportsVision: false },
-          pricing: { input: { usd: 1 }, output: { usd: 2 } },
-        },
-      }));
+      data = [
+        ...veniceModels.map(({ id, thinking }) => catalogEntry({ id, thinking, privacy: modelPrivacyById[id] ?? modelPrivacy })),
+        ...extraModels.map((model) => catalogEntry({ privacy: modelPrivacy, ...model })),
+      ];
     } else if (path === "/api_keys/rate_limits") {
       data = { accessPermitted: true };
     } else {

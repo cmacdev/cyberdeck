@@ -50,6 +50,32 @@ test("Venice allows only the abliterated large v2 model to be anonymized", async
   await assert.rejects(setup(veniceFixture({ modelPrivacyById: { [id]: "unknown" } })), new RegExp(`Venice model ${id} is unavailable, not private`));
 });
 
+test("Venice also registers every other online text model it offers", async () => {
+  const result = await setup(veniceFixture({
+    extraModels: [{ id: "extra-text", privacy: "anonymized", thinking: ["low", "high"] }, { id: "offline-text", spec: { offline: true } }],
+  }), { models: { providers: { venice: { models: [{ id: "retired-text" }] } } } });
+  assert.deepEqual(result.models.providers.venice.models.map((model) => model.id), [...veniceModelIds, "extra-text"]);
+  const extra = result.models.providers.venice.models.at(-1);
+  assert.deepEqual(extra.thinkingLevelMap, { off: null, minimal: null, low: "low", medium: null, high: "high", xhigh: null, max: null });
+  assert.equal(extra.samplingParams.venice_parameters.enable_web_search, "off");
+  const refreshed = await setup(veniceFixture(), { auth: result.auth, models: result.models, existingKey: undefined });
+  assert.deepEqual(refreshed.models.providers.venice.models.map((model) => model.id), veniceModelIds);
+});
+
+test("Venice skips a model Pi would reject and fails if it is a catalog model", async () => {
+  const malformed = [{ id: "null-context", spec: { availableContextTokens: null } }, { id: "unpriced", spec: { pricing: {} } }];
+  const result = await setup(veniceFixture({ extraModels: malformed }));
+  assert.deepEqual(result.models.providers.venice.models.map((model) => model.id), veniceModelIds);
+  for (const { id } of [...malformed, { id: "not-a-venice-model" }]) {
+    const pointed = structuredClone(config);
+    pointed.models["grok-4-7"].providers.venice = { id, thinking: [] };
+    await assert.rejects(
+      configureVenice({ existingKey: inferenceKey, config: pointed, auth: {}, models: {}, fetch: veniceFixture({ extraModels: malformed }).fetch }),
+      new RegExp(`Venice model ${id} is unavailable, not private, or lacks tool calling\\. Update or remove its models entry in cyberdeck\\.config\\.json\\.`),
+    );
+  }
+});
+
 test("Venice rejects failed authentication and catalog requests without exposing secrets", async () => {
   for (const failPath of ["/models", "/api_keys/rate_limits"]) {
     const fixture = veniceFixture({ failPath });
