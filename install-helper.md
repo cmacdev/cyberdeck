@@ -52,7 +52,7 @@ Every stop prints its cause; apply the fix and re-run the same command.
 ## After a successful run
 
 Restart the client after a first install so it spawns the server. Clients bound to
-`~/.cyberdeck/cyberdeck.config.json` pick up a reinstall without a restart. `claude mcp get cyberdeck` (Claude Code) or `~/.codex/config.toml` (Codex
+`~/.cyberdeck/cyberdeck.config.json` reload a reinstall's policy, but run the updated server only after a restart. `claude mcp get cyberdeck` (Claude Code) or `~/.codex/config.toml` (Codex
 CLI, ChatGPT Desktop) shows the registration.
 `node ~/.cyberdeck/app/bin/cyberdeck-mcp.mjs --config ~/.cyberdeck/cyberdeck.config.json --inspect`
 prints the resolved contract (checkout installs: use the checkout path from the installer summary). To check the real Pi path once, call `research` with model
@@ -106,7 +106,7 @@ global directory. There is no pin and no flag to keep an older Pi. A prerelease 
 the latest stable tag. Pi's auth store and other settings are not. `--uninstall` still leaves Pi.
 With `--herdr`, the installer also installs or updates the latest Herdr CLI unless `herdr` is installed elsewhere.
 Delegated runs suppress Pi's update notices by design; interactive `pi` shows them itself.
-Servers bound to the installed policy pick up the replacement without a restart.
+Servers bound to the installed policy reload the replacement; restart the client to run the updated server.
 
 Edit the installed policy only for changes you are willing to reapply after the next install.
 A model change edits its `models` entry: per-provider `id` and accepted `thinking`. Validate with

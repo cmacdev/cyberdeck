@@ -233,6 +233,7 @@ test("an invalid policy replacement rejects calls until the file is repaired", a
   const rejected = await call(client, "research", callArguments(fixture));
   assert.equal(rejected.structuredContent.status, "rejected");
   assert.match(rejected.structuredContent.error, /Configuration reload failed: Cannot read configuration/);
+  assert.match(rejected.structuredContent.error, /\. If Cyberdeck was updated after this server started, restart the MCP client; otherwise fix .*config\.json\.$/);
   await assert.rejects(access(fixture.artifactDirectory), "no run directory was created");
   await writeFile(configPath, `${JSON.stringify(makeConfig(fixture, { limits: { maxTaskCharacters: 9999 } }), null, 2)}\n`);
   const recovered = await call(client, "research", callArguments(fixture));
